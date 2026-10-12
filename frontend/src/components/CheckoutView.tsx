@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Room, Booking, PaymentMethodType, UserProfile } from '../types';
+import { bookingApi, promoApi } from '../services/api';
 import { ImageWithFallback } from './ImageWithFallback';
 import { ScrollReveal } from './ScrollReveal';
 import {
@@ -10,12 +11,17 @@ import {
   CheckCircle2,
   Calendar,
   Users,
-  MapPin,
-  Tag,
   Download,
   Check,
-  AlertCircle
+  AlertCircle,
+  ArrowRight
 } from 'lucide-react';
+import {
+  validateFullName,
+  validateEmail,
+  validatePhoneNumber,
+  validateNicOrPassport
+} from '../utils/validation';
 
 interface CheckoutViewProps {
   room: Room;
@@ -42,20 +48,69 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
   onBookingConfirmed,
   onGoToDashboard
 }) => {
+  const availableRoomNumbers =
+    room.availableRoomNumbers && room.availableRoomNumbers.length > 0
+      ? room.availableRoomNumbers
+      : (room.availableRooms ?? 5) <= 0
+      ? []
+      : Array.from({ length: room.availableRooms ?? 5 }, (_, i) => String((room.baseRoomNumber ?? 101) + i));
+
   // Form fields
-  const [fullName, setFullName] = useState(user?.fullName || 'Thilina Kavishan');
-  const [email, setEmail] = useState(user?.email || 'thilinakavishan42@gmail.com');
-  const [phone, setPhone] = useState(user?.phone || '+94 77 123 4567');
-  const [nicPassport, setNicPassport] = useState('200021394812');
-  const [specialRequests, setSpecialRequests] = useState('Ocean-facing upper floor if available.');
+  const [fullName, setFullName] = useState(user?.fullName || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [nicPassport, setNicPassport] = useState(user?.nicPassport || '');
+  const [specialRequests, setSpecialRequests] = useState('');
+  const [selectedRoomNumber, setSelectedRoomNumber] = useState<string>(availableRoomNumbers[0] || '');
+
+  // Field touch & step verification states
+  const [touched, setTouched] = useState<{
+    fullName: boolean;
+    email: boolean;
+    phone: boolean;
+    nicPassport: boolean;
+  }>({
+    fullName: false,
+    email: false,
+    phone: false,
+    nicPassport: false
+  });
+  const [step1Verified, setStep1Verified] = useState(false);
+
+  // Real-time validation errors for Step 1
+  const fullNameError = validateFullName(fullName);
+  const emailError = validateEmail(email);
+  const phoneError = validatePhoneNumber(phone);
+  const nicError = validateNicOrPassport(nicPassport);
+  const isGuestInfoValid = !fullNameError && !emailError && !phoneError && !nicError;
+  const isStep2Unlocked = isGuestInfoValid && step1Verified;
+
+  const handleContinueToPayment = () => {
+    setTouched({
+      fullName: true,
+      email: true,
+      phone: true,
+      nicPassport: true
+    });
+    if (isGuestInfoValid) {
+      setStep1Verified(true);
+      setBookingError(null);
+      const step2El = document.getElementById('checkout-step-2');
+      if (step2El) {
+        step2El.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    } else {
+      setStep1Verified(false);
+    }
+  };
 
   // Payment Selection
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodType>('payhere');
 
   // Card fields (for direct card option)
-  const [cardNumber, setCardNumber] = useState('4532 •••• •••• 8829');
-  const [cardExpiry, setCardExpiry] = useState('08/28');
-  const [cardCvc, setCardCvc] = useState('321');
+  const [cardNumber, setCardNumber] = useState('');
+  const [cardExpiry, setCardExpiry] = useState('');
+  const [cardCvc, setCardCvc] = useState('');
 
   // Promo code
   const [promoCodeInput, setPromoCodeInput] = useState('');
@@ -65,6 +120,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
 
   // Submission / Loading state
   const [isProcessing, setIsProcessing] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<Booking | null>(null);
 
   // Financial calculations
@@ -74,52 +130,86 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
   const discountAmount = Math.round(subtotal * promoDiscountRate);
   const grandTotal = Math.max(0, subtotal + serviceCharge + taxes - discountAmount);
 
-  const handleApplyPromo = (e: React.FormEvent) => {
+  const handleApplyPromo = async (e: React.FormEvent) => {
     e.preventDefault();
     setPromoError(null);
     const code = promoCodeInput.trim().toUpperCase();
     if (!code) return;
 
-    if (code === 'SERENE10') {
-      setAppliedPromo('SERENE10');
-      setPromoDiscountRate(0.10);
-    } else if (code === 'WELCOME15') {
-      setAppliedPromo('WELCOME15');
-      setPromoDiscountRate(0.15);
-    } else if (code === 'CEYLON20') {
-      setAppliedPromo('CEYLON20');
-      setPromoDiscountRate(0.20);
-    } else {
-      setPromoError('Invalid promo code. Try "SERENE10" for 10% off.');
+    try {
+      const res = await promoApi.validate(code, subtotal);
+      if (res.valid) {
+        setAppliedPromo(code);
+        setPromoDiscountRate(res.discountRate);
+      } else {
+        setPromoError(res.message || 'Invalid promo code.');
+      }
+    } catch {
+      if (code === 'SERENE10') {
+        setAppliedPromo('SERENE10');
+        setPromoDiscountRate(0.10);
+      } else if (code === 'WELCOME15') {
+        setAppliedPromo('WELCOME15');
+        setPromoDiscountRate(0.15);
+      } else if (code === 'CEYLON20') {
+        setAppliedPromo('CEYLON20');
+        setPromoDiscountRate(0.20);
+      } else {
+        setPromoError('Invalid promo code.');
+      }
     }
   };
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fullName || !email || !phone) return;
+    setBookingError(null);
+
+    setTouched({
+      fullName: true,
+      email: true,
+      phone: true,
+      nicPassport: true
+    });
+
+    if (!isGuestInfoValid) {
+      setStep1Verified(false);
+      setBookingError(
+        fullNameError ||
+          emailError ||
+          phoneError ||
+          nicError ||
+          'Please complete all mandatory Primary Guest Information fields with valid details.'
+      );
+      return;
+    }
+
+    if (!step1Verified) {
+      setStep1Verified(true);
+    }
+
+    if ((room.availableRooms ?? 5) <= 0 || availableRoomNumbers.length === 0) {
+      setBookingError('All rooms in this category are currently booked. No vacant rooms available.');
+      return;
+    }
 
     setIsProcessing(true);
 
-    // Simulate payment transaction with local gateways (PayHere / PayPal / Cards)
-    setTimeout(() => {
-      const randomRef = 'SS-LK-' + Math.floor(10000 + Math.random() * 90000);
-      const newBooking: Booking = {
-        id: 'bk-' + Date.now(),
-        bookingReference: randomRef,
+    try {
+      const newBooking = await bookingApi.create({
         roomId: room.id,
-        room,
+        roomNumber: selectedRoomNumber || availableRoomNumbers[0],
+        userId: user?.id,
         checkIn,
         checkOut,
         nights,
         adults,
         children,
-        totalGuests: adults + children,
         guestInfo: {
-          fullName,
-          email,
-          phone,
+          fullName: fullName.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
           specialRequests,
-          nicPassport
+          nicPassport: nicPassport.trim().toUpperCase()
         },
         paymentMethod,
         subtotal,
@@ -128,15 +218,17 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
         discountAmount,
         promoCodeApplied: appliedPromo || undefined,
         totalAmount: grandTotal,
-        currency: 'LKR',
-        status: 'confirmed',
-        bookedAt: new Date().toISOString().split('T')[0]
-      };
+        currency: 'LKR'
+      });
 
       setConfirmedBooking(newBooking);
       onBookingConfirmed(newBooking);
+    } catch (err: any) {
+      console.error('Failed to create booking through API:', err);
+      setBookingError(err.message || 'Unable to complete booking. Please check room availability and try again.');
+    } finally {
       setIsProcessing(false);
-    }, 1200);
+    }
   };
 
   // If confirmed, render pristine confirmation ticket receipt
@@ -154,10 +246,20 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
           <h1 className="font-serif text-3xl sm:text-4xl text-stone-900 dark:text-stone-100 font-medium tracking-tight mt-1 mb-2">
             Your Sanctuary is Awaiting You
           </h1>
-          <p className="text-sm text-stone-600 dark:text-stone-400 max-w-md mx-auto mb-6">
+          <p className="text-sm text-stone-600 dark:text-stone-400 max-w-md mx-auto mb-4">
             We've sent your booking confirmation details and digital voucher to{' '}
             <strong className="text-stone-900 dark:text-stone-100">{confirmedBooking.guestInfo.email}</strong>.
           </p>
+
+          {/* Prominent Assigned Room Number Banner */}
+          <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-2xl bg-[#0D4739] text-white shadow-lg mb-6">
+            <span className="text-xs uppercase tracking-wider text-[#E9D8A6] font-semibold">
+              Your Assigned Room Number:
+            </span>
+            <span className="font-mono text-xl font-bold tracking-wide bg-white/15 px-3 py-0.5 rounded-lg">
+              Room #{confirmedBooking.roomNumber || selectedRoomNumber || '101'}
+            </span>
+          </div>
 
           {/* Booking Card Voucher */}
           <div className="bg-[#F8F8F5] dark:bg-[#12201C] rounded-2xl p-6 text-left border border-stone-200 dark:border-[#1F332C] mb-8 space-y-4">
@@ -170,10 +272,15 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
                   {confirmedBooking.bookingReference}
                 </p>
               </div>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300">
-                <Check className="w-3.5 h-3.5" />
-                Guaranteed by Serene Stay
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-mono font-bold bg-[#0D4739] text-white">
+                  Room #{confirmedBooking.roomNumber || selectedRoomNumber || '101'}
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300">
+                  <Check className="w-3.5 h-3.5" />
+                  Guaranteed
+                </span>
+              </div>
             </div>
 
             <div className="flex items-center gap-4">
@@ -187,7 +294,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
               </div>
               <div>
                 <h3 className="font-serif font-medium text-lg text-stone-900 dark:text-stone-100">
-                  {confirmedBooking.room.name}
+                  {confirmedBooking.room.name} — <span className="text-[#0D4739] dark:text-[#C2A26F] font-mono">Room #{confirmedBooking.roomNumber || selectedRoomNumber || '101'}</span>
                 </h3>
                 <p className="text-xs text-stone-500 dark:text-stone-400">
                   {confirmedBooking.room.location} · {confirmedBooking.nights} Nights
@@ -195,7 +302,11 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3 border-t border-stone-200 dark:border-[#1F332C] text-xs">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-3 border-t border-stone-200 dark:border-[#1F332C] text-xs">
+              <div>
+                <span className="text-stone-500 dark:text-stone-400 block">Room Number</span>
+                <span className="font-mono font-bold text-[#0D4739] dark:text-[#C2A26F]">#{confirmedBooking.roomNumber || selectedRoomNumber || '101'}</span>
+              </div>
               <div>
                 <span className="text-stone-500 dark:text-stone-400 block">Check-in</span>
                 <span className="font-semibold text-stone-800 dark:text-stone-200">{confirmedBooking.checkIn}</span>
@@ -275,63 +386,134 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
                 </span>
                 Primary Guest Information
               </h2>
-              <span className="text-xs text-stone-400 dark:text-stone-500">All fields required</span>
+              {isStep2Unlocked ? (
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-1 rounded-full">
+                  <Check className="w-3.5 h-3.5" /> Verified
+                </span>
+              ) : (
+                <span className="text-xs text-rose-500 dark:text-rose-400 font-semibold">* All fields required</span>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Full Name (No numbers allowed) */}
               <div>
                 <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1.5">
-                  Full Name
+                  Full Name <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
                   required
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Thilina Kavishan"
-                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    // Strip digits immediately so numbers cannot be entered in name
+                    const cleaned = raw.replace(/[0-9]/g, '');
+                    setFullName(cleaned);
+                    setTouched((prev) => ({ ...prev, fullName: true }));
+                  }}
+                  onBlur={() => setTouched((prev) => ({ ...prev, fullName: true }))}
+                  placeholder="e.g. Thilina Kavishan (Letters only)"
+                  className={`w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 ${
+                    touched.fullName && fullNameError
+                      ? 'border-rose-400 dark:border-rose-500/70 focus:ring-rose-500'
+                      : 'border-stone-300 dark:border-[#1F332C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
                 />
+                {touched.fullName && fullNameError && (
+                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{fullNameError}</span>
+                  </p>
+                )}
               </div>
 
+              {/* Email Address */}
               <div>
                 <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1.5">
-                  Email Address
+                  Email Address <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="email"
                   required
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setTouched((prev) => ({ ...prev, email: true }));
+                  }}
+                  onBlur={() => setTouched((prev) => ({ ...prev, email: true }))}
                   placeholder="you@domain.com"
-                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                  className={`w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 ${
+                    touched.email && emailError
+                      ? 'border-rose-400 dark:border-rose-500/70 focus:ring-rose-500'
+                      : 'border-stone-300 dark:border-[#1F332C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
                 />
+                {touched.email && emailError && (
+                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{emailError}</span>
+                  </p>
+                )}
               </div>
 
+              {/* Contact Phone */}
               <div>
                 <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1.5">
-                  Contact Phone (+94 Sri Lanka)
+                  Contact Phone (+94 / 07X) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="tel"
                   required
                   value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="+94 77 123 4567"
-                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                  onChange={(e) => {
+                    const cleaned = e.target.value.replace(/[^0-9+\s()-]/g, '');
+                    setPhone(cleaned);
+                    setTouched((prev) => ({ ...prev, phone: true }));
+                  }}
+                  onBlur={() => setTouched((prev) => ({ ...prev, phone: true }))}
+                  placeholder="+94 77 123 4567 or 0771234567"
+                  className={`w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 ${
+                    touched.phone && phoneError
+                      ? 'border-rose-400 dark:border-rose-500/70 focus:ring-rose-500'
+                      : 'border-stone-300 dark:border-[#1F332C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
                 />
+                {touched.phone && phoneError && (
+                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{phoneError}</span>
+                  </p>
+                )}
               </div>
 
+              {/* NIC / Passport Number */}
               <div>
                 <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1.5">
-                  NIC / Passport Number
+                  NIC / Passport Number <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="text"
+                  required
                   value={nicPassport}
-                  onChange={(e) => setNicPassport(e.target.value)}
-                  placeholder="200021394812 / N1234567"
-                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                  onChange={(e) => {
+                    setNicPassport(e.target.value.toUpperCase());
+                    setTouched((prev) => ({ ...prev, nicPassport: true }));
+                  }}
+                  onBlur={() => setTouched((prev) => ({ ...prev, nicPassport: true }))}
+                  placeholder="200021394812 / 981234567V / N1234567"
+                  className={`w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 ${
+                    touched.nicPassport && nicError
+                      ? 'border-rose-400 dark:border-rose-500/70 focus:ring-rose-500'
+                      : 'border-stone-300 dark:border-[#1F332C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
                 />
+                {touched.nicPassport && nicError && (
+                  <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 font-medium">
+                    <AlertCircle className="w-3 h-3 shrink-0" />
+                    <span>{nicError}</span>
+                  </p>
+                )}
               </div>
             </div>
 
@@ -347,12 +529,55 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
                 className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
               />
             </div>
+
+            {/* Step 1 Verification Action Bar */}
+            <div className="pt-3 border-t border-stone-100 dark:border-[#1F332C] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              {isStep2Unlocked ? (
+                <div className="flex items-center gap-2 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                  <CheckCircle2 className="w-4 h-4 shrink-0" />
+                  <span>Primary Guest Information verified. You may now select your Payment Method below.</span>
+                </div>
+              ) : (
+                <p className="text-xs text-stone-500 dark:text-stone-400">
+                  Please fill in valid Full Name, Email, Phone Number, and NIC/Passport to unlock Step 2.
+                </p>
+              )}
+
+              <button
+                type="button"
+                onClick={handleContinueToPayment}
+                className={`inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shrink-0 ${
+                  isStep2Unlocked
+                    ? 'bg-emerald-100 dark:bg-emerald-950/50 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800/60'
+                    : 'bg-[#0D4739] hover:bg-[#083329] text-white shadow-sm'
+                }`}
+              >
+                {isStep2Unlocked ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Step 1 Complete</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Verify & Continue to Step 2</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
+              </button>
+            </div>
           </div>
           </ScrollReveal>
 
           {/* Step 2: Payment Gateways (Local & Global) */}
           <ScrollReveal animation="fade-up" delay={0.1}>
-          <div className="bg-white dark:bg-[#101C18] rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-[#1F332C] shadow-sm space-y-6">
+          <div
+            id="checkout-step-2"
+            className={`bg-white dark:bg-[#101C18] rounded-3xl p-6 sm:p-8 border shadow-sm space-y-6 transition-all ${
+              isStep2Unlocked
+                ? 'border-stone-200 dark:border-[#1F332C]'
+                : 'border-stone-200/70 dark:border-[#1F332C]/60 bg-stone-50/70 dark:bg-[#101C18]/60'
+            }`}
+          >
             <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-[#1F332C]">
               <h2 className="font-serif text-xl font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
                 <span className="w-6 h-6 rounded-full bg-[#0D4739] dark:bg-[#C2A26F] text-white dark:text-stone-950 text-xs flex items-center justify-center font-sans font-bold">
@@ -365,6 +590,25 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
               </span>
             </div>
 
+            {!isStep2Unlocked && (
+              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-300 font-medium">
+                  <Lock className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    Step 2 is locked until you complete all mandatory fields in <strong>Step 1: Primary Guest Information</strong> (valid Name without numbers, Phone Number, Email, and NIC/Passport ID) and click <strong>"Verify & Continue to Step 2"</strong>.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleContinueToPayment}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-xl shrink-0 cursor-pointer transition-colors"
+                >
+                  Check Step 1 Now
+                </button>
+              </div>
+            )}
+
+            <div className={!isStep2Unlocked ? 'opacity-45 pointer-events-none select-none space-y-6' : 'space-y-6'}>
             {/* Gateway Selection Tabs */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               {/* PayHere (Sri Lanka) */}
@@ -511,6 +755,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
                 </span>
               </div>
             )}
+            </div>
           </div>
           </ScrollReveal>
         </div>
@@ -541,6 +786,40 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
                   LKR {room.pricePerNight.toLocaleString()} / night
                 </p>
               </div>
+            </div>
+
+            {/* Room Number Selection Box */}
+            <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/60 space-y-2">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-semibold text-stone-800 dark:text-stone-200">
+                  Assigned Room Number:
+                </span>
+                <span className="font-mono font-bold text-[#0D4739] dark:text-[#C2A26F] text-sm">
+                  {selectedRoomNumber ? `Room #${selectedRoomNumber}` : 'None Available'}
+                </span>
+              </div>
+              {availableRoomNumbers.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {availableRoomNumbers.map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setSelectedRoomNumber(num)}
+                      className={`px-2.5 py-1 rounded-lg font-mono text-xs font-bold border transition-all cursor-pointer ${
+                        selectedRoomNumber === num
+                          ? 'bg-[#0D4739] text-white border-[#0D4739] shadow-sm'
+                          : 'bg-white dark:bg-[#12201C] text-stone-700 dark:text-stone-300 border-stone-200 dark:border-[#1F332C] hover:border-[#0D4739]'
+                      }`}
+                    >
+                      #{num}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-semibold">
+                  All rooms in this category are currently occupied.
+                </p>
+              )}
             </div>
 
             {/* Dates summary */}
@@ -628,22 +907,38 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
               </div>
             </div>
 
+            {bookingError && (
+              <div className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2 font-medium">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{bookingError}</span>
+              </div>
+            )}
+
             {/* Confirm & Pay Button */}
             <button
               type="submit"
-              disabled={isProcessing}
-              className="w-full py-4 bg-[#0D4739] hover:bg-[#083329] active:scale-[0.98] disabled:opacity-75 text-white font-medium rounded-2xl shadow-lg transition-all text-base flex items-center justify-center gap-2 cursor-pointer"
+              disabled={!isStep2Unlocked || isProcessing || availableRoomNumbers.length === 0}
+              className="w-full py-4 bg-[#0D4739] hover:bg-[#083329] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium rounded-2xl shadow-lg transition-all text-base flex items-center justify-center gap-2 cursor-pointer"
             >
               {isProcessing ? (
                 <>
                   <span className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                   <span>Processing Guarantee with Gateway...</span>
                 </>
+              ) : availableRoomNumbers.length === 0 ? (
+                <span>No Vacant Rooms Available</span>
+              ) : !isStep2Unlocked ? (
+                <>
+                  <Lock className="w-4 h-4" />
+                  <span>Complete & Verify Step 1 (Guest Info) to Proceed</span>
+                </>
               ) : (
                 <>
                   <Lock className="w-4 h-4" />
                   <span>
-                    {paymentMethod === 'pay_at_hotel' ? 'Complete Reservation (Pay at Check-in)' : `Pay LKR ${grandTotal.toLocaleString()}`}
+                    {paymentMethod === 'pay_at_hotel'
+                      ? `Complete Reservation · Room #${selectedRoomNumber || availableRoomNumbers[0]}`
+                      : `Pay LKR ${grandTotal.toLocaleString()} · Room #${selectedRoomNumber || availableRoomNumbers[0]}`}
                   </span>
                 </>
               )}

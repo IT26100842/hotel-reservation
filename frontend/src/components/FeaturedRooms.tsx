@@ -46,6 +46,25 @@ export const FeaturedRooms: React.FC<FeaturedRoomsProps> = ({ rooms, onSelectRoo
                   fallbackTitle={room.name}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
                 />
+                {/* Live Vacancy Badge */}
+                {(() => {
+                  const total = room.totalRooms ?? 5;
+                  const avail = room.availableRooms ?? total;
+                  const isFull = avail <= 0 || room.status === 'maintenance';
+                  return (
+                    <div
+                      className={`absolute top-3 left-3 px-2.5 py-1 rounded-md text-[11px] font-semibold backdrop-blur-md shadow-sm ${
+                        isFull
+                          ? 'bg-rose-600/90 text-white'
+                          : avail <= 2
+                          ? 'bg-amber-500/95 text-stone-950'
+                          : 'bg-[#0D4739]/90 text-white'
+                      }`}
+                    >
+                      {isFull ? 'Sold Out · 0 Vacant' : `${avail} of ${total} Rooms Vacant`}
+                    </div>
+                  );
+                })()}
                 <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
                   <span className="w-9 h-9 rounded-full bg-white/90 dark:bg-[#101C18]/90 backdrop-blur-md text-[#0D4739] dark:text-[#C2A26F] flex items-center justify-center shadow-md">
                     <ArrowUpRight className="w-4 h-4" />

@@ -13,10 +13,10 @@ import {
   UserProfile
 } from './types';
 import {
-  INITIAL_BOOKINGS,
-  INITIAL_ROOMS,
-  INITIAL_USER
+  INITIAL_ROOMS
 } from './data/mockData';
+import { roomApi, bookingApi, authApi } from './services/api';
+import { saveUserSession, loadUserSession, clearUserSession } from './utils/cookies';
 import { parseRoute, getUrlForView } from './utils/routes';
 import { SmartPreloader } from './components/SmartPreloader';
 import { TopLoadingBar } from './components/TopLoadingBar';
@@ -32,6 +32,7 @@ import { CheckoutView } from './components/CheckoutView';
 import { UserDashboardView } from './components/UserDashboardView';
 import { AuthModal } from './components/AuthModal';
 import { Footer } from './components/Footer';
+import { AdminPortal } from './admin/AdminPortal';
 import { ThemeProvider } from './context/ThemeContext';
 import { CheckCircle2, Info, X } from 'lucide-react';
 
@@ -82,8 +83,8 @@ function AppContent() {
 
   // Global App Data
   const [rooms, setRooms] = useState<Room[]>(INITIAL_ROOMS);
-  const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
-  const [user, setUser] = useState<UserProfile | null>(INITIAL_USER);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [user, setUser] = useState<UserProfile | null>(() => loadUserSession());
   const [authModal, setAuthModal] = useState<AuthModalType>(null);
 
   // Active search filters state with initial query params support
@@ -107,6 +108,26 @@ function AppContent() {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
   };
+
+  // Fetch rooms from backend MySQL API on mount
+  useEffect(() => {
+    roomApi.getAll().then((data) => {
+      if (data && data.length > 0) {
+        setRooms(data);
+      }
+    });
+  }, []);
+
+  // Fetch user reservations from backend MySQL API when user changes
+  useEffect(() => {
+    if (user?.email) {
+      bookingApi.getUserBookings(user.email, user.id).then((bks) => {
+        setBookings(bks || []);
+      });
+    } else {
+      setBookings([]);
+    }
+  }, [user]);
 
   // Synchronize on mount and handle Browser Back/Forward buttons and Hash changes
   useEffect(() => {
@@ -210,7 +231,7 @@ function AppContent() {
     triggerNavigation('room-detail', room);
   };
 
-  // Proceed to Checkout from Room Details
+  // Proceed to Checkout from Room Details (Requires User Login)
   const handleProceedToBooking = (details: {
     room: Room;
     checkIn: string;
@@ -219,18 +240,45 @@ function AppContent() {
     adults: number;
     children: number;
   }) => {
+    if (!user) {
+      showToast('Please log in to book this room.', 'info');
+      setAuthModal('login');
+      return;
+    }
     setCheckoutParams(details);
     triggerNavigation('checkout');
+  };
+
+  // Refresh rooms from backend to keep availability counts & room numbers live
+  const refreshRooms = () => {
+    roomApi.getAll().then((data) => {
+      if (data && data.length > 0) {
+        setRooms(data);
+        setSelectedRoom((prev) => data.find((r) => r.id === prev.id) || prev);
+        setCheckoutParams((prev) => ({
+          ...prev,
+          room: data.find((r) => r.id === prev.room.id) || prev.room
+        }));
+      }
+    });
   };
 
   // Handle successful reservation confirmation
   const handleBookingConfirmed = (newBooking: Booking) => {
     setBookings((prev) => [newBooking, ...prev]);
-    showToast(`Reservation #${newBooking.bookingReference} confirmed! Voucher sent to ${newBooking.guestInfo.email}`);
+    refreshRooms();
+    showToast(
+      `Reservation #${newBooking.bookingReference} confirmed (Room #${newBooking.roomNumber || '101'})! Voucher sent to ${newBooking.guestInfo.email}`
+    );
   };
 
   // Handle booking cancellation
-  const handleCancelBooking = (bookingId: string, reason: string) => {
+  const handleCancelBooking = async (bookingId: string, reason: string) => {
+    try {
+      await bookingApi.cancel(bookingId, reason);
+    } catch (err) {
+      console.warn('Backend cancel failed, updating locally:', err);
+    }
     setBookings((prev) =>
       prev.map((b) =>
         b.id === bookingId
@@ -238,11 +286,17 @@ function AppContent() {
           : b
       )
     );
-    showToast('Reservation successfully cancelled. Full refund initiated.', 'info');
+    refreshRooms();
+    showToast('Reservation successfully cancelled. Room returned to vacant inventory.', 'info');
   };
 
   // Handle Rating a past completed booking
-  const handleRateBooking = (bookingId: string, rating: number, comment?: string) => {
+  const handleRateBooking = async (bookingId: string, rating: number, comment?: string) => {
+    try {
+      await bookingApi.rate(bookingId, rating, comment);
+    } catch (err) {
+      console.warn('Backend rate failed, updating locally:', err);
+    }
     setBookings((prev) =>
       prev.map((b) =>
         b.id === bookingId
@@ -254,15 +308,42 @@ function AppContent() {
   };
 
   // Handle Profile Update
-  const handleUpdateProfile = (updatedProfile: Partial<UserProfile>) => {
+  const handleUpdateProfile = async (updatedProfile: Partial<UserProfile>) => {
     if (user) {
-      setUser({ ...user, ...updatedProfile });
-      showToast('Profile information successfully saved.');
+      try {
+        const saved = await authApi.updateProfile(user.id, updatedProfile);
+        saveUserSession(saved);
+        setUser(saved);
+        showToast('Profile information successfully saved.');
+      } catch (err: any) {
+        showToast(err?.message || 'Failed to update profile.', 'info');
+        throw err;
+      }
     }
   };
 
+  // Handle Profile Photo Upload (Frontend Resized -> Backend -> ImgBB -> MySQL DB)
+  const handleUploadAvatar = async (base64Image: string): Promise<UserProfile> => {
+    if (!user) throw new Error('Please sign in first.');
+    const saved = await authApi.uploadAvatar(user.id, base64Image);
+    saveUserSession(saved);
+    setUser(saved);
+    showToast('Profile photo uploaded!');
+    return saved;
+  };
+
+  // Handle Profile Photo Removal
+  const handleRemoveAvatar = async (): Promise<UserProfile> => {
+    if (!user) throw new Error('Please sign in first.');
+    const saved = await authApi.removeAvatar(user.id);
+    saveUserSession(saved);
+    setUser(saved);
+    showToast('Profile photo removed.', 'info');
+    return saved;
+  };
+
   // Toggle Save / Bookmark Room
-  const handleToggleSaveRoom = (roomId: string) => {
+  const handleToggleSaveRoom = async (roomId: string) => {
     if (!user) {
       setAuthModal('login');
       return;
@@ -271,9 +352,25 @@ function AppContent() {
     const newSaved = isSaved
       ? user.savedRoomIds.filter((id) => id !== roomId)
       : [...user.savedRoomIds, roomId];
-    setUser({ ...user, savedRoomIds: newSaved });
+    const updated = { ...user, savedRoomIds: newSaved };
+    saveUserSession(updated);
+    setUser(updated);
     showToast(isSaved ? 'Removed from saved sanctuaries' : 'Saved to your favorites');
+    try {
+      await authApi.toggleSavedRoom(user.id, roomId);
+    } catch (err) {
+      console.warn('Backend toggle save room failed:', err);
+    }
   };
+
+  // 0. Dedicated Isolated Admin Portal (Never loads admin controls into client routes)
+  if (currentView === 'admin') {
+    return (
+      <AdminPortal
+        onGoToClientSite={() => triggerNavigation('home')}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FBFBF9] dark:bg-[#0A1210] text-[#1A1F1D] dark:text-[#EDEDEB] transition-colors duration-300 overflow-x-hidden">
@@ -291,10 +388,28 @@ function AppContent() {
       {/* 3. Global Navbar */}
       <Navbar
         currentView={currentView}
-        onNavigate={(view) => triggerNavigation(view)}
+        onNavigate={(view) => {
+          if (view === 'search') {
+            setSearchFilters({
+              location: 'Bentota, Sri Lanka',
+              checkIn: '2026-10-18',
+              checkOut: '2026-10-22',
+              guests: 1,
+              roomType: 'all',
+              minPrice: 10000,
+              maxPrice: 60000,
+              amenities: [],
+              minRating: 0,
+              sortBy: 'popular'
+            });
+          }
+          triggerNavigation(view);
+        }}
         user={user}
         onOpenAuth={(type) => setAuthModal(type)}
         onLogout={() => {
+          authApi.logout();
+          clearUserSession();
           setUser(null);
           showToast('Successfully logged out', 'info');
         }}
@@ -342,6 +457,11 @@ function AppContent() {
               onBookNow={handleProceedToBooking}
               isSaved={user?.savedRoomIds.includes(selectedRoom.id) || false}
               onToggleSave={() => handleToggleSaveRoom(selectedRoom.id)}
+              isLoggedIn={Boolean(user)}
+              onRequireLogin={() => {
+                showToast('Please log in to book this room.', 'info');
+                setAuthModal('login');
+              }}
             />
           </div>
         )}
@@ -372,6 +492,8 @@ function AppContent() {
                 rooms={rooms}
                 onCancelBooking={handleCancelBooking}
                 onUpdateProfile={handleUpdateProfile}
+                onUploadAvatar={handleUploadAvatar}
+                onRemoveAvatar={handleRemoveAvatar}
                 onSelectRoom={handleSelectRoom}
                 onExploreRooms={() => triggerNavigation('search')}
                 onRateBooking={handleRateBooking}
@@ -405,6 +527,7 @@ function AppContent() {
           type={authModal}
           onClose={() => setAuthModal(null)}
           onLoginSuccess={(newUser) => {
+            saveUserSession(newUser);
             setUser(newUser);
             showToast(`Welcome back, ${newUser.fullName}!`);
           }}

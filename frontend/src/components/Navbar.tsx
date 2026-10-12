@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppView, AuthModalType, UserProfile } from '../types';
 import { Menu, X, Calendar, User, LogOut, ChevronDown, Compass } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
+import { getAvatarUrl, NO_DP_AVATAR } from '../utils/avatar';
 
 interface NavbarProps {
   currentView: AppView;
@@ -138,9 +139,12 @@ export const Navbar: React.FC<NavbarProps> = ({
                   className="flex items-center gap-2.5 p-1.5 pr-3 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer"
                 >
                   <img
-                    src={user.avatar}
+                    src={getAvatarUrl(user.avatar)}
                     alt={user.fullName}
-                    className="w-8 h-8 rounded-full object-cover border border-[#D5D8D5] dark:border-[#1F332C]"
+                    onError={(e) => {
+                      e.currentTarget.src = NO_DP_AVATAR;
+                    }}
+                    className="w-8 h-8 rounded-full object-cover border border-[#D5D8D5] dark:border-[#1F332C] bg-stone-800"
                   />
                   <span className="text-sm font-medium text-[#1A1F1D] dark:text-stone-200 max-w-[120px] truncate">
                     {user.fullName}
@@ -264,9 +268,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               <>
                 <div className="flex items-center gap-3 px-3 py-2">
                   <img
-                    src={user.avatar}
+                    src={getAvatarUrl(user.avatar)}
                     alt={user.fullName}
-                    className="w-10 h-10 rounded-full object-cover border border-[#0D4739]/30"
+                    onError={(e) => {
+                      e.currentTarget.src = NO_DP_AVATAR;
+                    }}
+                    className="w-10 h-10 rounded-full object-cover border border-[#0D4739]/30 bg-stone-800"
                   />
                   <div>
                     <p className="font-medium text-sm text-stone-900 dark:text-stone-100">{user.fullName}</p>

@@ -95,6 +95,11 @@ export function parseRoute(
     }
   }
 
+  // Route 0: Admin Management Portal (/admin, /admin/*)
+  if (pathOnly === 'admin' || pathOnly.startsWith('admin/')) {
+    return { view: 'admin' };
+  }
+
   // Route 1: Home Root
   if (!pathOnly || pathOnly === '' || pathOnly === 'home' || pathOnly === 'index') {
     return { view: 'home', searchFilters: filters };
@@ -170,6 +175,8 @@ export function getUrlForView(view: AppView, room?: Room): string {
       return '/checkout';
     case 'dashboard':
       return '/dashboard';
+    case 'admin':
+      return '/admin';
     default:
       return '/';
   }

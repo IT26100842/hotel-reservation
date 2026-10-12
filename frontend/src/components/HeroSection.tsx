@@ -1,18 +1,42 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Calendar, Users, BedDouble, Search, ChevronDown, Sparkles, Check } from 'lucide-react';
+import { Calendar, Users, BedDouble, Search, ChevronDown, Sparkles, Check, AlertCircle } from 'lucide-react';
 import { RoomType, SearchFilters } from '../types';
 import { ImageWithFallback } from './ImageWithFallback';
 import { ScrollReveal } from './ScrollReveal';
+import Hero_back_image from '../assets/images/hero_back_image.avif';
 
 interface HeroSectionProps {
   onSearch: (filters: Partial<SearchFilters>) => void;
 }
 
+function formatLocalYMD(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function addDaysToYMD(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  const dt = new Date(y, (m || 1) - 1, (d || 1) + days);
+  return formatLocalYMD(dt);
+}
+
 export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
-  const [checkIn, setCheckIn] = useState('2026-10-18');
-  const [checkOut, setCheckOut] = useState('2026-10-22');
+  const todayStr = formatLocalYMD(new Date());
+  // Check-in must be after today (minimum: tomorrow)
+  const minCheckInDate = addDaysToYMD(todayStr, 1);
+
+  const [checkIn, setCheckIn] = useState(() => minCheckInDate);
+  const [checkOut, setCheckOut] = useState(() => addDaysToYMD(minCheckInDate, 2));
   const [adults, setAdults] = useState(2);
   const [roomType, setRoomType] = useState<RoomType>('all');
+  const [dateError, setDateError] = useState<string>('');
+
+  // Check-out must be after the selected check-in date
+  const minCheckOutDate = checkIn && checkIn >= minCheckInDate
+    ? addDaysToYMD(checkIn, 1)
+    : addDaysToYMD(minCheckInDate, 1);
 
   const [activeDropdown, setActiveDropdown] = useState<'checkin' | 'checkout' | 'guests' | 'type' | null>(null);
   const searchBarRef = useRef<HTMLDivElement>(null);
@@ -28,8 +52,60 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  const handleCheckInChange = (selectedDate: string) => {
+    if (!selectedDate) {
+      setCheckIn('');
+      setDateError('Please select a valid check-in date.');
+      return;
+    }
+    if (selectedDate <= todayStr) {
+      setDateError('Check-in date must be after today. Past or finished dates cannot be selected.');
+      setCheckIn(minCheckInDate);
+      if (!checkOut || checkOut <= minCheckInDate) {
+        setCheckOut(addDaysToYMD(minCheckInDate, 1));
+      }
+      return;
+    }
+    setDateError('');
+    setCheckIn(selectedDate);
+    if (!checkOut || checkOut <= selectedDate) {
+      setCheckOut(addDaysToYMD(selectedDate, 1));
+    }
+    setActiveDropdown('checkout');
+  };
+
+  const handleCheckOutChange = (selectedDate: string) => {
+    if (!selectedDate) {
+      setCheckOut('');
+      setDateError('Please select a valid check-out date.');
+      return;
+    }
+    if (checkIn && selectedDate <= checkIn) {
+      setDateError('Check-out date must be after the selected check-in date.');
+      setCheckOut(addDaysToYMD(checkIn, 1));
+      return;
+    }
+    setDateError('');
+    setCheckOut(selectedDate);
+    setActiveDropdown(null);
+  };
+
   const handleSearchSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+
+    if (!checkIn || checkIn <= todayStr) {
+      setDateError('Check-in date must be a date after today.');
+      setActiveDropdown('checkin');
+      return;
+    }
+
+    if (!checkOut || checkOut <= checkIn) {
+      setDateError('Check-out date must be after the check-in date.');
+      setActiveDropdown('checkout');
+      return;
+    }
+
+    setDateError('');
     setActiveDropdown(null);
     onSearch({
       checkIn,
@@ -54,7 +130,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
         {/* Background Image: Luxury open-air tropical bedroom overlooking ocean */}
         <div className="absolute inset-0 z-0">
           <ImageWithFallback
-            src="https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=2400&q=85"
+            src={Hero_back_image}
             alt="Serene Stay tropical luxury bedroom with ocean view"
             containerClassName="w-full h-full"
             className="w-full h-full object-cover object-center"
@@ -105,7 +181,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
                       Check-in
                     </span>
                     <span className="block text-sm font-semibold text-stone-900 dark:text-stone-100">
-                      {checkIn ? new Date(checkIn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select date'}
+                      {checkIn ? new Date(checkIn + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select date'}
                     </span>
                   </div>
                 </div>
@@ -115,39 +191,35 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
               {activeDropdown === 'checkin' && (
                 <div className="absolute left-0 top-full mt-2 z-50 bg-white dark:bg-[#12201C] rounded-2xl shadow-2xl border border-stone-200 dark:border-[#1F332C] p-4 w-72">
                   <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-2">
-                    Arrival Date
+                    Arrival Date (After Today)
                   </label>
                   <input
                     type="date"
+                    min={minCheckInDate}
                     value={checkIn}
-                    onChange={(e) => {
-                      setCheckIn(e.target.value);
-                      setActiveDropdown('checkout');
-                    }}
+                    onChange={(e) => handleCheckInChange(e.target.value)}
                     className="w-full px-3 py-2 border border-stone-300 dark:border-[#2A443B] bg-white dark:bg-[#0A1210] rounded-lg text-sm text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-[#0D4739]"
                   />
                   <div className="mt-3 flex gap-2">
                     <button
                       type="button"
                       onClick={() => {
-                        const today = new Date().toISOString().split('T')[0];
-                        setCheckIn(today);
-                        setActiveDropdown(null);
+                        handleCheckInChange(minCheckInDate);
                       }}
-                      className="text-xs text-[#0D4739] dark:text-[#C2A26F] hover:underline font-medium"
+                      className="text-xs text-[#0D4739] dark:text-[#C2A26F] hover:underline font-medium cursor-pointer"
                     >
-                      Today
+                      Tomorrow
                     </button>
                     <span className="text-stone-300 dark:text-stone-600">·</span>
                     <button
                       type="button"
                       onClick={() => {
                         const nextSat = new Date();
-                        nextSat.setDate(nextSat.getDate() + ((6 - nextSat.getDay() + 7) % 7 || 7));
-                        setCheckIn(nextSat.toISOString().split('T')[0]);
-                        setActiveDropdown(null);
+                        const daysUntilSat = (6 - nextSat.getDay() + 7) % 7 || 7;
+                        nextSat.setDate(nextSat.getDate() + daysUntilSat);
+                        handleCheckInChange(formatLocalYMD(nextSat));
                       }}
-                      className="text-xs text-[#0D4739] dark:text-[#C2A26F] hover:underline font-medium"
+                      className="text-xs text-[#0D4739] dark:text-[#C2A26F] hover:underline font-medium cursor-pointer"
                     >
                       This Weekend
                     </button>
@@ -170,7 +242,7 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
                       Check-out
                     </span>
                     <span className="block text-sm font-semibold text-stone-900 dark:text-stone-100">
-                      {checkOut ? new Date(checkOut).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select date'}
+                      {checkOut ? new Date(checkOut + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Select date'}
                     </span>
                   </div>
                 </div>
@@ -184,11 +256,9 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
                   </label>
                   <input
                     type="date"
+                    min={minCheckOutDate}
                     value={checkOut}
-                    onChange={(e) => {
-                      setCheckOut(e.target.value);
-                      setActiveDropdown(null);
-                    }}
+                    onChange={(e) => handleCheckOutChange(e.target.value)}
                     className="w-full px-3 py-2 border border-stone-300 dark:border-[#2A443B] bg-white dark:bg-[#0A1210] rounded-lg text-sm text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-[#0D4739]"
                   />
                 </div>
@@ -305,6 +375,13 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
             </div>
 
           </div>
+
+          {dateError && (
+            <div className="mt-2.5 px-3.5 py-2 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-xs font-medium text-red-600 dark:text-red-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{dateError}</span>
+            </div>
+          )}
         </div>
       </ScrollReveal>
 
