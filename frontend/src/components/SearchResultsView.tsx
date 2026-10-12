@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Room, RoomType, SearchFilters } from '../types';
 import { ImageWithFallback } from './ImageWithFallback';
 import {
@@ -34,17 +34,64 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
   const [filters, setFilters] = useState<SearchFilters>(initialFilters);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
 
+  // Synchronize internal state whenever initialFilters prop updates
+  useEffect(() => {
+    setFilters(initialFilters);
+  }, [initialFilters]);
+
+  // Robust room type handler that toggles and ensures no conflicting guest/price filter hides rooms
+  const handleSelectRoomType = (newType: RoomType) => {
+    const targetType = filters.roomType === newType ? 'all' : newType;
+
+    setFilters((prev) => {
+      let updatedGuests = prev.guests;
+      let updatedMaxPrice = prev.maxPrice;
+      let updatedMinRating = prev.minRating;
+
+      if (targetType !== 'all') {
+        const matching = rooms.filter(
+          (r) => r.type.toLowerCase().trim() === targetType.toLowerCase().trim()
+        );
+        if (matching.length > 0) {
+          const maxCap = Math.max(...matching.map((r) => r.maxGuests));
+          if (updatedGuests > maxCap) {
+            updatedGuests = maxCap;
+          }
+          const minPrice = Math.min(...matching.map((r) => r.pricePerNight));
+          if (updatedMaxPrice < minPrice) {
+            updatedMaxPrice = 60000;
+          }
+          const maxRating = Math.max(...matching.map((r) => r.rating));
+          if (updatedMinRating > maxRating) {
+            updatedMinRating = 0;
+          }
+        }
+      }
+
+      return {
+        ...prev,
+        roomType: targetType,
+        guests: updatedGuests,
+        maxPrice: updatedMaxPrice,
+        minRating: updatedMinRating
+      };
+    });
+  };
+
   // Filter and sort logic
   const filteredRooms = useMemo(() => {
     return rooms
       .filter((room) => {
-        // Room type filter
-        if (filters.roomType !== 'all' && room.type !== filters.roomType) {
+        // Room type filter (case-insensitive)
+        if (
+          filters.roomType !== 'all' &&
+          room.type.toLowerCase().trim() !== filters.roomType.toLowerCase().trim()
+        ) {
           return false;
         }
 
-        // Guests filter
-        if (room.maxGuests < filters.guests) {
+        // Guests filter: only restrict if viewing 'all' or room has sufficient capacity
+        if (filters.roomType === 'all' && room.maxGuests < filters.guests) {
           return false;
         }
 
@@ -181,7 +228,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
               ].map((opt) => (
                 <button
                   key={opt.id}
-                  onClick={() => setFilters({ ...filters, roomType: opt.id as RoomType })}
+                  onClick={() => handleSelectRoomType(opt.id as RoomType)}
                   className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-colors flex items-center justify-between cursor-pointer ${
                     filters.roomType === opt.id
                       ? 'bg-[#0D4739] text-white shadow-sm'
@@ -207,16 +254,16 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
             </div>
             <input
               type="range"
-              min="12000"
-              max="50000"
-              step="2000"
+              min="10000"
+              max="60000"
+              step="2500"
               value={filters.maxPrice}
               onChange={(e) => setFilters({ ...filters, maxPrice: Number(e.target.value) })}
               className="w-full accent-[#0D4739] dark:accent-[#C2A26F] cursor-pointer"
             />
             <div className="flex justify-between text-[11px] text-stone-400 dark:text-stone-500 mt-1">
-              <span>LKR 12,000</span>
-              <span>LKR 50,000</span>
+              <span>LKR 10,000</span>
+              <span>LKR 60,000</span>
             </div>
           </div>
 
@@ -229,7 +276,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
               {[1, 2, 3, 4, 5].map((g) => (
                 <button
                   key={g}
-                  onClick={() => setFilters({ ...filters, guests: g })}
+                  onClick={() => setFilters({ ...filters, guests: filters.guests === g ? 1 : g })}
                   className={`flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-colors cursor-pointer ${
                     filters.guests === g
                       ? 'bg-[#0D4739] border-[#0D4739] text-white'
@@ -255,7 +302,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
               ].map((opt) => (
                 <button
                   key={opt.rating}
-                  onClick={() => setFilters({ ...filters, minRating: opt.rating })}
+                  onClick={() => setFilters({ ...filters, minRating: filters.minRating === opt.rating ? 0 : opt.rating })}
                   className={`w-full text-left px-3 py-1.5 rounded-lg text-xs font-medium flex items-center justify-between cursor-pointer ${
                     filters.minRating === opt.rating
                       ? 'bg-[#0D4739]/10 dark:bg-[#0D4739]/30 text-[#0D4739] dark:text-[#C2A26F] font-bold'
@@ -319,7 +366,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
               </button>
             </div>
           ) : (
-            <StaggerContainer staggerDelay={0.12} className="space-y-6">
+            <StaggerContainer key={filteredRooms.map((room) => room.id).join('-')} staggerDelay={0.12} className="space-y-6">
               {filteredRooms.map((room) => {
                 const isSaved = savedRoomIds.includes(room.id);
                 return (
@@ -332,6 +379,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                         <ImageWithFallback
                           src={room.images[0]}
                           alt={room.name}
+                          containerClassName="h-full w-full"
                           fallbackTitle={room.name}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ease-out"
                         />
@@ -349,11 +397,31 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                         </button>
 
                         {/* Badge */}
-                        {room.popular && (
-                          <div className="absolute top-3 left-3 bg-[#0D4739] text-white text-[11px] font-medium px-2.5 py-1 rounded-md shadow-sm">
-                            Guest Favorite
-                          </div>
-                        )}
+                        <div className="absolute top-3 left-3 flex flex-wrap items-center gap-1.5">
+                          {room.popular && (
+                            <div className="bg-[#0D4739] text-white text-[11px] font-medium px-2.5 py-1 rounded-md shadow-sm">
+                              Guest Favorite
+                            </div>
+                          )}
+                          {(() => {
+                            const total = room.totalRooms ?? 5;
+                            const avail = room.availableRooms ?? total;
+                            const isFull = avail <= 0 || room.status === 'maintenance';
+                            return (
+                              <div
+                                className={`text-[11px] font-semibold px-2.5 py-1 rounded-md shadow-sm backdrop-blur-md ${
+                                  isFull
+                                    ? 'bg-rose-600/95 text-white'
+                                    : avail <= 2
+                                    ? 'bg-amber-500/95 text-stone-950'
+                                    : 'bg-emerald-800/90 text-white'
+                                }`}
+                              >
+                                {isFull ? 'Fully Booked (0 Vacant)' : `${avail} of ${total} Rooms Available`}
+                              </div>
+                            );
+                          })()}
+                        </div>
                       </div>
 
                       {/* Content (Right on desktop) */}
@@ -397,6 +465,14 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                               <Maximize2 className="w-3.5 h-3.5 text-stone-400" />
                               {room.sizeSqFt} sq ft
                             </span>
+                            {room.availableRoomNumbers && room.availableRoomNumbers.length > 0 && (
+                              <>
+                                <span>·</span>
+                                <span className="text-emerald-700 dark:text-emerald-400 font-mono font-semibold">
+                                  Next Room: #{room.availableRoomNumbers[0]}
+                                </span>
+                              </>
+                            )}
                           </div>
 
                           {/* Top Amenities tags */}
@@ -428,13 +504,24 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                           </div>
 
                           <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => onSelectRoom(room)}
-                              className="px-5 py-2.5 bg-[#0D4739] hover:bg-[#083329] active:scale-[0.98] text-white text-xs font-semibold rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-                            >
-                              <span>View & Reserve</span>
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
+                            {(() => {
+                              const total = room.totalRooms ?? 5;
+                              const avail = room.availableRooms ?? total;
+                              const isFull = avail <= 0 || room.status === 'maintenance';
+                              return (
+                                <button
+                                  onClick={() => onSelectRoom(room)}
+                                  className={`px-5 py-2.5 text-xs font-semibold rounded-xl transition-all shadow-sm flex items-center gap-1.5 cursor-pointer ${
+                                    isFull
+                                      ? 'bg-stone-300 dark:bg-stone-800 text-stone-600 dark:text-stone-400'
+                                      : 'bg-[#0D4739] hover:bg-[#083329] active:scale-[0.98] text-white'
+                                  }`}
+                                >
+                                  <span>{isFull ? 'Sold Out (View Details)' : 'View & Reserve'}</span>
+                                  <ArrowRight className="w-3.5 h-3.5" />
+                                </button>
+                              );
+                            })()}
                           </div>
                         </div>
                       </div>
@@ -474,7 +561,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
                 ].map((opt) => (
                   <button
                     key={opt.id}
-                    onClick={() => setFilters({ ...filters, roomType: opt.id as RoomType })}
+                    onClick={() => handleSelectRoomType(opt.id as RoomType)}
                     className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium cursor-pointer ${
                       filters.roomType === opt.id
                         ? 'bg-[#0D4739] text-white'
@@ -495,21 +582,32 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
               </div>
               <input
                 type="range"
-                min="12000"
-                max="50000"
-                step="2000"
+                min="10000"
+                max="60000"
+                step="2500"
                 value={filters.maxPrice}
                 onChange={(e) => setFilters({ ...filters, maxPrice: Number(e.target.value) })}
                 className="w-full accent-[#0D4739] dark:accent-[#C2A26F]"
               />
             </div>
 
-            <button
-              onClick={() => setMobileFilterOpen(false)}
-              className="w-full py-3 bg-[#0D4739] hover:bg-[#083329] text-white font-medium rounded-xl text-sm cursor-pointer shadow-md"
-            >
-              Apply Filters ({filteredRooms.length} rooms)
-            </button>
+            <div className="space-y-2">
+              <button
+                onClick={() => setMobileFilterOpen(false)}
+                className="w-full py-3 bg-[#0D4739] hover:bg-[#083329] text-white font-medium rounded-xl text-sm cursor-pointer shadow-md"
+              >
+                Apply Filters ({filteredRooms.length} rooms)
+              </button>
+              <button
+                onClick={() => {
+                  resetFilters();
+                  setMobileFilterOpen(false);
+                }}
+                className="w-full py-2.5 bg-stone-100 dark:bg-[#162A24] text-stone-700 dark:text-stone-300 font-medium rounded-xl text-xs cursor-pointer"
+              >
+                Reset All Filters
+              </button>
+            </div>
           </div>
         </div>
       )}

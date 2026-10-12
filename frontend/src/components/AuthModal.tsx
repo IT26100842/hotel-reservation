@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { AuthModalType, UserProfile } from '../types';
-import { X, Lock, Mail, User, Eye, EyeOff, Check, ArrowRight, Sparkles } from 'lucide-react';
+import { authApi } from '../services/api';
+import { saveUserSession } from '../utils/cookies';
+import { validateFullName, validateEmail, validatePhoneNumber } from '../utils/validation';
+import { X, Lock, Mail, User, Phone, Eye, EyeOff, Check, Sparkles, AlertCircle } from 'lucide-react';
 
 interface AuthModalProps {
   type: AuthModalType;
@@ -18,51 +21,92 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   );
 
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState('thilinakavishan42@gmail.com');
-  const [password, setPassword] = useState('••••••••••');
-  const [fullName, setFullName] = useState('Thilina Kavishan');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [regTouched, setRegTouched] = useState<{ fullName: boolean; phone: boolean }>({
+    fullName: false,
+    phone: false
+  });
   const [resetSent, setResetSent] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   if (!type) return null;
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const regNameError = validateFullName(fullName);
+  const regPhoneError = validatePhoneNumber(phone);
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const demoUser: UserProfile = {
-      id: 'usr-' + Date.now(),
-      fullName: fullName || 'Thilina Kavishan',
-      email: email || 'thilinakavishan42@gmail.com',
-      phone: '+94 77 123 4567',
-      city: 'Colombo',
-      country: 'Sri Lanka',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-      preferredCurrency: 'LKR',
-      memberSince: 'October 2026',
-      savedRoomIds: ['room-2', 'room-3']
-    };
-    onLoginSuccess(demoUser);
-    onClose();
+    setIsSubmitting(true);
+    setAuthError(null);
+    try {
+      const user = await authApi.login(email, password);
+      saveUserSession(user);
+      onLoginSuccess(user);
+      onClose();
+    } catch (err: any) {
+      setAuthError(err.message || 'Login failed. Please check your credentials.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setRegTouched({ fullName: true, phone: true });
+
+    const nameErr = validateFullName(fullName);
+    if (nameErr) {
+      setAuthError(nameErr);
+      return;
+    }
+    const emailErr = validateEmail(email);
+    if (emailErr) {
+      setAuthError(emailErr);
+      return;
+    }
+    const phoneErr = validatePhoneNumber(phone);
+    if (phoneErr) {
+      setAuthError(phoneErr);
+      return;
+    }
+    if (password.trim().length < 6) {
+      setAuthError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const user = await authApi.register({
+        fullName: fullName.trim(),
+        email: email.trim(),
+        password,
+        phone: phone.trim(),
+        city: 'Colombo',
+        country: 'Sri Lanka'
+      });
+      saveUserSession(user);
+      onLoginSuccess(user);
+      onClose();
+    } catch (err: any) {
+      setAuthError(err.message || 'Registration failed.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleForgotSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!email.trim()) {
+      setAuthError('Please enter your email address.');
+      return;
+    }
+    setAuthError(null);
     setResetSent(true);
-  };
-
-  const handleQuickDemo = () => {
-    const demoUser: UserProfile = {
-      id: 'usr-demo',
-      fullName: 'Thilina Kavishan',
-      email: 'thilinakavishan42@gmail.com',
-      phone: '+94 77 123 4567',
-      city: 'Colombo',
-      country: 'Sri Lanka',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-      preferredCurrency: 'LKR',
-      memberSince: 'January 2025',
-      savedRoomIds: ['room-2', 'room-3']
-    };
-    onLoginSuccess(demoUser);
-    onClose();
   };
 
   return (
@@ -94,7 +138,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {activeTab !== 'forgot' && (
           <div className="flex border-b border-stone-200 dark:border-[#1F332C] mb-6">
             <button
-              onClick={() => setActiveTab('login')}
+              onClick={() => { setActiveTab('login'); setAuthError(null); }}
               className={`flex-1 pb-3 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
                 activeTab === 'login'
                   ? 'border-[#0D4739] dark:border-[#C2A26F] text-[#0D4739] dark:text-[#C2A26F]'
@@ -104,7 +148,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               Log in
             </button>
             <button
-              onClick={() => setActiveTab('register')}
+              onClick={() => { setActiveTab('register'); setAuthError(null); }}
               className={`flex-1 pb-3 text-sm font-semibold border-b-2 transition-colors cursor-pointer ${
                 activeTab === 'register'
                   ? 'border-[#0D4739] dark:border-[#C2A26F] text-[#0D4739] dark:text-[#C2A26F]'
@@ -113,6 +157,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             >
               Create account
             </button>
+          </div>
+        )}
+
+        {authError && (
+          <div className="mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs font-medium">
+            {authError}
           </div>
         )}
 
@@ -127,6 +177,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <input
                   type="email"
                   required
+                  autoComplete="username email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
@@ -146,6 +197,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   onClick={() => {
                     setActiveTab('forgot');
                     setResetSent(false);
+                    setAuthError(null);
                   }}
                   className="text-xs text-[#0D4739] dark:text-[#C2A26F] hover:underline cursor-pointer"
                 >
@@ -156,6 +208,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
@@ -174,55 +227,64 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3 bg-[#0D4739] hover:bg-[#083329] text-white text-sm font-semibold rounded-xl shadow-md transition-all cursor-pointer"
+              disabled={isSubmitting}
+              className="w-full py-3 bg-[#0D4739] hover:bg-[#083329] text-white text-sm font-semibold rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50"
             >
-              Sign In to Serene Stay
+              {isSubmitting ? 'Signing In...' : 'Sign In to Serene Stay'}
             </button>
-
-            {/* Quick Demo Login Helper */}
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={handleQuickDemo}
-                className="w-full py-2.5 bg-stone-100 dark:bg-[#172A24] hover:bg-stone-200 dark:hover:bg-[#1E362F] text-stone-800 dark:text-stone-200 text-xs font-semibold rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#0D4739] dark:text-[#C2A26F]" />
-                <span>Quick Demo Sign-in (1-Click)</span>
-              </button>
-            </div>
           </form>
         )}
 
         {/* Register Form */}
         {activeTab === 'register' && (
-          <form onSubmit={handleLoginSubmit} className="space-y-4">
+          <form onSubmit={handleRegisterSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1">
-                Your Full Name
+                Your Full Name <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <input
                   type="text"
                   required
+                  autoComplete="name"
                   value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="e.g. Thilina Kavishan"
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                  onChange={(e) => {
+                    setFullName(e.target.value.replace(/[0-9]/g, ''));
+                    setRegTouched((prev) => ({ ...prev, fullName: true }));
+                    setAuthError(null);
+                  }}
+                  onBlur={() => setRegTouched((prev) => ({ ...prev, fullName: true }))}
+                  placeholder="e.g. Ruwan Wickramasinghe (Letters only)"
+                  className={`w-full pl-9 pr-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 ${
+                    regTouched.fullName && regNameError
+                      ? 'border-rose-400 dark:border-rose-500/70 focus:ring-rose-500'
+                      : 'border-stone-300 dark:border-[#1F332C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
                 />
                 <User className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3.5" />
               </div>
+              {regTouched.fullName && regNameError && (
+                <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 font-medium">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{regNameError}</span>
+                </p>
+              )}
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1">
-                Email Address
+                Email Address <span className="text-rose-500">*</span>
               </label>
               <div className="relative">
                 <input
                   type="email"
                   required
+                  autoComplete="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setAuthError(null);
+                  }}
                   placeholder="you@domain.com"
                   className="w-full pl-9 pr-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
                 />
@@ -232,15 +294,49 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             <div>
               <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1">
-                Create Password
+                Phone Number <span className="text-rose-500">*</span>
+              </label>
+              <div className="relative">
+                <input
+                  type="tel"
+                  required
+                  autoComplete="tel"
+                  value={phone}
+                  onChange={(e) => {
+                    setPhone(e.target.value.replace(/[^0-9+\s()-]/g, ''));
+                    setRegTouched((prev) => ({ ...prev, phone: true }));
+                    setAuthError(null);
+                  }}
+                  onBlur={() => setRegTouched((prev) => ({ ...prev, phone: true }))}
+                  placeholder="+94 77 123 4567 or 0771234567"
+                  className={`w-full pl-9 pr-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 ${
+                    regTouched.phone && regPhoneError
+                      ? 'border-rose-400 dark:border-rose-500/70 focus:ring-rose-500'
+                      : 'border-stone-300 dark:border-[#1F332C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
+                />
+                <Phone className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3.5" />
+              </div>
+              {regTouched.phone && regPhoneError && (
+                <p className="mt-1 text-[11px] text-rose-600 dark:text-rose-400 flex items-center gap-1 font-medium">
+                  <AlertCircle className="w-3 h-3 shrink-0" />
+                  <span>{regPhoneError}</span>
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1">
+                Create Password (Min 6 Characters)
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   required
+                  autoComplete="new-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Minimum 8 characters"
+                  placeholder="Minimum 6 characters"
                   className="w-full pl-9 pr-10 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
                 />
                 <Lock className="w-4 h-4 text-stone-400 dark:text-stone-500 absolute left-3 top-3.5" />
@@ -260,9 +356,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             <button
               type="submit"
-              className="w-full py-3 bg-[#0D4739] hover:bg-[#083329] text-white text-sm font-semibold rounded-xl shadow-md transition-all cursor-pointer"
+              disabled={isSubmitting}
+              className="w-full py-3 bg-[#0D4739] hover:bg-[#083329] text-white text-sm font-semibold rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-50"
             >
-              Create Free Account
+              {isSubmitting ? 'Creating Account...' : 'Create Free Account'}
             </button>
           </form>
         )}
@@ -284,6 +381,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <input
                       type="email"
                       required
+                      autoComplete="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@domain.com"

@@ -36,6 +36,8 @@ interface RoomDetailViewProps {
   }) => void;
   isSaved: boolean;
   onToggleSave: () => void;
+  isLoggedIn?: boolean;
+  onRequireLogin?: () => void;
 }
 
 export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
@@ -43,7 +45,9 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
   onBack,
   onBookNow,
   isSaved,
-  onToggleSave
+  onToggleSave,
+  isLoggedIn = false,
+  onRequireLogin
 }) => {
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
   const [checkIn, setCheckIn] = useState('2026-10-18');
@@ -51,6 +55,13 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
   const [copiedShare, setCopiedShare] = useState(false);
+  const [loginWarning, setLoginWarning] = useState(false);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      setLoginWarning(false);
+    }
+  }, [isLoggedIn]);
 
   // Preload all room gallery images immediately on mount so thumbnails are instant
   useEffect(() => {
@@ -81,7 +92,23 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
     setTimeout(() => setCopiedShare(false), 2000);
   };
 
+  const totalRoomsCount = room.totalRooms ?? 5;
+  const availableRoomsCount = room.availableRooms ?? totalRoomsCount;
+  const isRoomSoldOut = availableRoomsCount <= 0 || room.status === 'maintenance';
+  const availableRoomNumbers = room.availableRoomNumbers && room.availableRoomNumbers.length > 0
+    ? room.availableRoomNumbers
+    : Array.from({ length: availableRoomsCount }, (_, i) => String((room.baseRoomNumber ?? 101) + i));
+
   const handleProceedBooking = () => {
+    if (isRoomSoldOut) return;
+    if (!isLoggedIn) {
+      setLoginWarning(true);
+      if (onRequireLogin) {
+        onRequireLogin();
+      }
+      return;
+    }
+    setLoginWarning(false);
     onBookNow({
       room,
       checkIn,
@@ -309,6 +336,39 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
               </div>
             </div>
 
+            {/* Live Room Inventory & Vacancy Status Banner */}
+            <div
+              className={`p-3.5 rounded-2xl border text-xs space-y-1.5 ${
+                isRoomSoldOut
+                  ? 'bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-200'
+                  : 'bg-emerald-50/80 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200'
+              }`}
+            >
+              <div className="flex items-center justify-between font-semibold">
+                <span>Category Availability:</span>
+                <span className="font-bold">
+                  {room.status === 'maintenance'
+                    ? 'Under Maintenance'
+                    : isRoomSoldOut
+                    ? `0 of ${totalRoomsCount} Vacant (Fully Booked)`
+                    : `${availableRoomsCount} of ${totalRoomsCount} Rooms Vacant`}
+                </span>
+              </div>
+              {!isRoomSoldOut && availableRoomNumbers.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1 pt-1">
+                  <span className="text-[11px] opacity-80 mr-1">Vacant Room Numbers:</span>
+                  {availableRoomNumbers.map((rNum) => (
+                    <span
+                      key={rNum}
+                      className="px-1.5 py-0.5 rounded bg-white dark:bg-[#101C18] border border-emerald-300 dark:border-emerald-700 font-mono text-[10px] font-bold text-[#0D4739] dark:text-[#C2A26F]"
+                    >
+                      #{rNum}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Date Pickers */}
             <div className="border border-stone-200 dark:border-[#1F332C] rounded-2xl overflow-hidden divide-y divide-stone-200 dark:divide-[#1F332C]">
               <div className="grid grid-cols-2 divide-x divide-stone-200 dark:divide-[#1F332C]">
@@ -394,13 +454,42 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
               </div>
             </div>
 
+            {loginWarning && !isLoggedIn && (
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Lock className="w-4 h-4 shrink-0" />
+                  <span>Please log in to your account to book this room.</span>
+                </div>
+                {onRequireLogin && (
+                  <button
+                    type="button"
+                    onClick={onRequireLogin}
+                    className="font-semibold underline hover:no-underline shrink-0 cursor-pointer"
+                  >
+                    Log in
+                  </button>
+                )}
+              </div>
+            )}
+
             {/* Book Now Button */}
             <button
               onClick={handleProceedBooking}
-              className="w-full py-4 bg-[#0D4739] hover:bg-[#083329] active:scale-[0.98] text-white font-medium rounded-2xl shadow-lg transition-all duration-200 flex items-center justify-center gap-2 text-base cursor-pointer"
+              disabled={isRoomSoldOut}
+              className={`w-full py-4 font-medium rounded-2xl shadow-lg transition-all duration-200 flex items-center justify-center gap-2 text-base ${
+                isRoomSoldOut
+                  ? 'bg-stone-300 dark:bg-stone-800 text-stone-500 dark:text-stone-400 cursor-not-allowed'
+                  : 'bg-[#0D4739] hover:bg-[#083329] active:scale-[0.98] text-white cursor-pointer'
+              }`}
             >
-              <span>Book Now</span>
-              <ChevronRight className="w-4 h-4" />
+              <span>
+                {room.status === 'maintenance'
+                  ? 'Room Under Maintenance'
+                  : isRoomSoldOut
+                  ? 'Fully Booked — No Vacant Rooms'
+                  : `Book Now (Room #${availableRoomNumbers[0] || '101'})`}
+              </span>
+              {!isRoomSoldOut && <ChevronRight className="w-4 h-4" />}
             </button>
 
             <p className="text-center text-[11px] text-stone-400 dark:text-stone-500">

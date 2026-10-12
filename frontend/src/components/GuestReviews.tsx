@@ -1,8 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { INITIAL_REVIEWS } from '../data/mockData';
 import { Review, UserProfile } from '../types';
-import { Star, Heart, ThumbsUp, MessageSquarePlus, Check, Sparkles, User, X } from 'lucide-react';
+import { reviewApi } from '../services/api';
+import { Star, Heart, ThumbsUp, MessageSquarePlus, Check, User, X, AlertCircle, BadgeCheck } from 'lucide-react';
 import { ScrollReveal, StaggerContainer, StaggerItem } from './ScrollReveal';
+import { getAvatarUrl, NO_DP_AVATAR } from '../utils/avatar';
+import {
+  getMyReviewIdsFromCookie,
+  addMyReviewIdToCookie,
+  getLikedReviewIdsFromCookie,
+  saveLikedReviewIdsToCookie,
+  getHeartedReviewIdsFromCookie,
+  saveHeartedReviewIdsToCookie,
+} from '../utils/cookies';
+import { validateFullName } from '../utils/validation';
 
 interface GuestReviewsProps {
   user?: UserProfile | null;
@@ -16,24 +27,44 @@ interface ReviewWithReactions extends Review {
   userReactedHeart?: boolean;
 }
 
-export const GuestReviews: React.FC<GuestReviewsProps> = ({ user, onOpenAuth }) => {
-  const [reviewsList, setReviewsList] = useState<ReviewWithReactions[]>([
-    {
-      ...INITIAL_REVIEWS[0],
-      likes: 18,
-      hearts: 24,
-    },
-    {
-      ...INITIAL_REVIEWS[1],
-      likes: 29,
-      hearts: 35,
-    },
-    {
-      ...INITIAL_REVIEWS[2],
-      likes: 14,
-      hearts: 21,
-    }
-  ]);
+export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
+  const [myReviewIds, setMyReviewIds] = useState<string[]>(() => getMyReviewIdsFromCookie());
+  const [reviewsList, setReviewsList] = useState<ReviewWithReactions[]>(() => {
+    const likedIds = getLikedReviewIdsFromCookie();
+    const heartedIds = getHeartedReviewIdsFromCookie();
+    return INITIAL_REVIEWS.slice(0, 3).map((r) => ({
+      ...r,
+      likes: typeof r.likes === 'number' ? r.likes : 0,
+      hearts: typeof r.hearts === 'number' ? r.hearts : 0,
+      userReactedLike: likedIds.includes(String(r.id)),
+      userReactedHeart: heartedIds.includes(String(r.id)),
+    }));
+  });
+
+  // Load reviews from MySQL backend API on mount
+  useEffect(() => {
+    const likedIds = getLikedReviewIdsFromCookie();
+    const heartedIds = getHeartedReviewIdsFromCookie();
+    setMyReviewIds(getMyReviewIdsFromCookie());
+
+    reviewApi.getAll().then((data) => {
+      if (data && data.length > 0) {
+        setReviewsList(
+          data.map((r) => {
+            const rid = String(r.id);
+            return {
+              ...r,
+              id: rid,
+              likes: typeof r.likes === 'number' ? r.likes : 0,
+              hearts: typeof r.hearts === 'number' ? r.hearts : 0,
+              userReactedLike: likedIds.includes(rid),
+              userReactedHeart: heartedIds.includes(rid),
+            };
+          })
+        );
+      }
+    });
+  }, []);
 
   // Review Form States
   const [showForm, setShowForm] = useState(false);
@@ -43,63 +74,157 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user, onOpenAuth }) 
   const [comment, setComment] = useState('');
   const [roomBooked, setRoomBooked] = useState('Deluxe Oceanfront');
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // Toggle reactions
-  const handleToggleLike = (id: string) => {
+  // Toggle reactions & persist to MySQL database + cookies
+  const handleToggleLike = async (id: string) => {
+    const target = reviewsList.find((r) => r.id === id);
+    if (!target) return;
+    const reacted = !target.userReactedLike;
+
+    // Persist in browser cookie
+    const currentLiked = getLikedReviewIdsFromCookie();
+    const updatedLiked = reacted
+      ? Array.from(new Set([...currentLiked, id]))
+      : currentLiked.filter((item) => item !== id);
+    saveLikedReviewIdsToCookie(updatedLiked);
+
+    // Optimistic UI update
     setReviewsList((prev) =>
-      prev.map((r) => {
-        if (r.id === id) {
-          const reacted = !r.userReactedLike;
-          return {
-            ...r,
-            userReactedLike: reacted,
-            likes: reacted ? r.likes + 1 : Math.max(0, r.likes - 1)
-          };
-        }
-        return r;
-      })
+      prev.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              userReactedLike: reacted,
+              likes: reacted ? r.likes + 1 : Math.max(0, r.likes - 1),
+            }
+          : r
+      )
     );
+
+    // Save to database and sync count
+    const updatedFromDb = await reviewApi.toggleLike(id, reacted);
+    if (updatedFromDb) {
+      setReviewsList((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                likes: typeof updatedFromDb.likes === 'number' ? updatedFromDb.likes : r.likes,
+                hearts: typeof updatedFromDb.hearts === 'number' ? updatedFromDb.hearts : r.hearts,
+              }
+            : r
+        )
+      );
+    }
   };
 
-  const handleToggleHeart = (id: string) => {
+  const handleToggleHeart = async (id: string) => {
+    const target = reviewsList.find((r) => r.id === id);
+    if (!target) return;
+    const reacted = !target.userReactedHeart;
+
+    // Persist in browser cookie
+    const currentHearted = getHeartedReviewIdsFromCookie();
+    const updatedHearted = reacted
+      ? Array.from(new Set([...currentHearted, id]))
+      : currentHearted.filter((item) => item !== id);
+    saveHeartedReviewIdsToCookie(updatedHearted);
+
+    // Optimistic UI update
     setReviewsList((prev) =>
-      prev.map((r) => {
-        if (r.id === id) {
-          const reacted = !r.userReactedHeart;
-          return {
-            ...r,
-            userReactedHeart: reacted,
-            hearts: reacted ? r.hearts + 1 : Math.max(0, r.hearts - 1)
-          };
-        }
-        return r;
-      })
+      prev.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              userReactedHeart: reacted,
+              hearts: reacted ? r.hearts + 1 : Math.max(0, r.hearts - 1),
+            }
+          : r
+      )
     );
+
+    // Save to database and sync count
+    const updatedFromDb = await reviewApi.toggleHeart(id, reacted);
+    if (updatedFromDb) {
+      setReviewsList((prev) =>
+        prev.map((r) =>
+          r.id === id
+            ? {
+                ...r,
+                likes: typeof updatedFromDb.likes === 'number' ? updatedFromDb.likes : r.likes,
+                hearts: typeof updatedFromDb.hearts === 'number' ? updatedFromDb.hearts : r.hearts,
+              }
+            : r
+        )
+      );
+    }
   };
 
   // Submit Feedback
-  const handleSubmitReview = (e: React.FormEvent) => {
+  const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
 
-    // Auto-detect name if logged in, otherwise take typed input
-    const finalName = user?.fullName || guestName.trim();
-    if (!finalName || !comment.trim()) return;
+    // Auto-detect name if logged in, otherwise validate typed input
+    const finalName = user?.fullName ? user.fullName.trim() : guestName.trim();
+    if (!user) {
+      const nameErr = validateFullName(finalName);
+      if (nameErr) {
+        setFormError(nameErr);
+        return;
+      }
+    }
+    if (!comment.trim()) {
+      setFormError('Please enter your review comment.');
+      return;
+    }
 
-    const newReview: ReviewWithReactions = {
-      id: 'rev-' + Date.now(),
-      guestName: finalName,
-      location: '', // Address removed as requested
-      avatar: user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-      rating,
-      comment: `“${comment.trim()}”`,
-      date: 'Just now',
-      roomBooked,
-      likes: 1,
-      hearts: 1,
-      userReactedHeart: true
-    };
+    try {
+      const saved = await reviewApi.submit({
+        guestName: finalName,
+        rating,
+        comment: `“${comment.trim()}”`,
+        roomBooked,
+        avatar: user?.avatar || '',
+      });
 
-    setReviewsList([newReview, ...reviewsList]);
+      const savedId = String(saved.id);
+      const updatedMyReviews = addMyReviewIdToCookie(savedId);
+      setMyReviewIds(updatedMyReviews);
+
+      const newReview: ReviewWithReactions = {
+        ...saved,
+        id: savedId,
+        likes: 0,
+        hearts: 0,
+        userReactedLike: false,
+        userReactedHeart: false,
+      };
+
+      setReviewsList((prev) => [newReview, ...prev]);
+    } catch {
+      const fallbackId = 'rev-' + Date.now();
+      const updatedMyReviews = addMyReviewIdToCookie(fallbackId);
+      setMyReviewIds(updatedMyReviews);
+
+      const newReview: ReviewWithReactions = {
+        id: fallbackId,
+        guestName: finalName,
+        location: '',
+        avatar: user?.avatar || '',
+        rating,
+        comment: `“${comment.trim()}”`,
+        date: 'Just now',
+        roomBooked,
+        likes: 0,
+        hearts: 0,
+        userReactedLike: false,
+        userReactedHeart: false,
+      };
+      setReviewsList((prev) => [newReview, ...prev]);
+    }
+
     setComment('');
     setGuestName('');
     setSubmitSuccess(true);
@@ -165,13 +290,23 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user, onOpenAuth }) 
             </div>
           ) : (
             <form onSubmit={handleSubmitReview} className="space-y-4">
+              {formError && (
+                <div className="p-3 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/50 rounded-xl flex items-center gap-2 text-xs text-red-700 dark:text-red-300 font-medium">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+                  <span>{formError}</span>
+                </div>
+              )}
+
               {/* User Identity: Auto-fill if logged in, else text input */}
               {user ? (
                 <div className="flex items-center gap-3 p-3 bg-[#0D4739]/5 dark:bg-[#0D4739]/20 rounded-2xl border border-[#0D4739]/15 dark:border-[#0D4739]/30">
                   <img
-                    src={user.avatar}
+                    src={getAvatarUrl(user.avatar)}
                     alt={user.fullName}
-                    className="w-10 h-10 rounded-full object-cover border border-[#0D4739]/20"
+                    onError={(e) => {
+                      e.currentTarget.src = NO_DP_AVATAR;
+                    }}
+                    className="w-10 h-10 rounded-full object-cover border border-[#0D4739]/20 bg-stone-800"
                   />
                   <div>
                     <span className="text-[11px] font-semibold uppercase tracking-wider text-[#0D4739] dark:text-[#C2A26F] block">
@@ -192,8 +327,11 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user, onOpenAuth }) 
                       type="text"
                       required
                       value={guestName}
-                      onChange={(e) => setGuestName(e.target.value)}
-                      placeholder="e.g. Ruwan Perera"
+                      onChange={(e) => {
+                        setGuestName(e.target.value.replace(/[0-9]/g, ''));
+                        setFormError(null);
+                      }}
+                      placeholder="e.g. Ruwan Perera (Letters only)"
                       className="w-full pl-9 pr-3.5 py-2.5 bg-stone-50 dark:bg-[#0A1210] border border-stone-300 dark:border-[#2A443B] rounded-xl text-sm text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#0A1210] focus:outline-none focus:ring-2 focus:ring-[#0D4739]"
                     />
                     <User className="w-4 h-4 text-stone-400 absolute left-3 top-3.5" />
@@ -258,7 +396,10 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user, onOpenAuth }) 
                   required
                   rows={3}
                   value={comment}
-                  onChange={(e) => setComment(e.target.value)}
+                  onChange={(e) => {
+                    setComment(e.target.value);
+                    setFormError(null);
+                  }}
                   placeholder="Tell us what you enjoyed most about your stay at Serene Stay..."
                   className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#0A1210] border border-stone-300 dark:border-[#2A443B] rounded-xl text-sm text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#0A1210] focus:outline-none focus:ring-2 focus:ring-[#0D4739]"
                 />
@@ -289,17 +430,37 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user, onOpenAuth }) 
         staggerDelay={0.16}
         className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8"
       >
-        {reviewsList.map((rev) => (
+        {reviewsList.map((rev) => {
+          const isMyReview = myReviewIds.includes(String(rev.id));
+          return (
           <StaggerItem key={rev.id} animation="fade-up">
-            <div className="bg-white dark:bg-[#101C18] rounded-2xl p-6 sm:p-7 shadow-sm border border-stone-200/80 dark:border-[#1F332C] hover:shadow-md transition-all duration-300 flex flex-col justify-between h-full transform-gpu">
+            <div
+              className={`bg-white dark:bg-[#101C18] rounded-2xl p-6 sm:p-7 shadow-sm border transition-all duration-300 flex flex-col justify-between h-full transform-gpu ${
+                isMyReview
+                  ? 'border-[#0D4739] dark:border-[#C2A26F] ring-1 ring-[#0D4739]/20 dark:ring-[#C2A26F]/25 shadow-md'
+                  : 'border-stone-200/80 dark:border-[#1F332C] hover:shadow-md'
+              }`}
+            >
               <div>
+                {isMyReview && (
+                  <div className="mb-3 flex items-center justify-between">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#0D4739]/10 dark:bg-[#C2A26F]/15 text-[#0D4739] dark:text-[#C2A26F] border border-[#0D4739]/25 dark:border-[#C2A26F]/30">
+                      <BadgeCheck className="w-3.5 h-3.5" />
+                      Your Review
+                    </span>
+                  </div>
+                )}
+
                 {/* Top Row: Avatar & Stars */}
                 <div className="flex items-start gap-4 mb-4">
                   <div className="shrink-0">
                     <img
-                      src={rev.avatar}
+                      src={getAvatarUrl(rev.avatar)}
                       alt={rev.guestName}
-                      className="w-14 h-14 rounded-full object-cover border border-stone-200 dark:border-[#1F332C] shadow-sm"
+                      onError={(e) => {
+                        e.currentTarget.src = NO_DP_AVATAR;
+                      }}
+                      className="w-14 h-14 rounded-full object-cover border border-stone-200 dark:border-[#1F332C] shadow-sm bg-stone-800"
                     />
                   </div>
 
@@ -375,7 +536,8 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user, onOpenAuth }) 
               </div>
             </div>
           </StaggerItem>
-        ))}
+          );
+        })}
       </StaggerContainer>
     </section>
   );

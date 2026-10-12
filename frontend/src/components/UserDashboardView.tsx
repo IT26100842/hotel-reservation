@@ -2,6 +2,13 @@ import React, { useState, useRef } from 'react';
 import { Booking, UserProfile, Room } from '../types';
 import { ImageWithFallback } from './ImageWithFallback';
 import {
+  NO_DP_AVATAR,
+  getAvatarUrl,
+  hasCustomAvatar,
+  resizeImageForUpload,
+  ResizedImageResult
+} from '../utils/avatar';
+import {
   Calendar,
   Clock,
   MapPin,
@@ -22,29 +29,24 @@ import {
   X,
   Camera,
   Upload,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Loader2
 } from 'lucide-react';
 import { ScrollReveal, StaggerContainer, StaggerItem } from './ScrollReveal';
+import { validateFullName, validateEmail, validatePhoneNumber } from '../utils/validation';
 
 interface UserDashboardViewProps {
   user: UserProfile;
   bookings: Booking[];
   rooms: Room[];
   onCancelBooking: (bookingId: string, reason: string) => void;
-  onUpdateProfile: (updatedProfile: Partial<UserProfile>) => void;
+  onUpdateProfile: (updatedProfile: Partial<UserProfile>) => Promise<void> | void;
+  onUploadAvatar?: (base64Image: string) => Promise<UserProfile>;
+  onRemoveAvatar?: () => Promise<UserProfile>;
   onSelectRoom: (room: Room) => void;
   onExploreRooms: () => void;
   onRateBooking?: (bookingId: string, rating: number, comment?: string) => void;
 }
-
-const PRESET_AVATARS = [
-  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=300&q=80',
-  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80',
-  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80',
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80',
-  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=300&q=80'
-];
 
 export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   user,
@@ -52,6 +54,8 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   rooms,
   onCancelBooking,
   onUpdateProfile,
+  onUploadAvatar,
+  onRemoveAvatar,
   onSelectRoom,
   onExploreRooms,
   onRateBooking
@@ -61,19 +65,39 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   // Profile Edit State
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [formData, setFormData] = useState({
-    fullName: user.fullName,
-    email: user.email,
-    phone: user.phone,
-    city: user.city,
-    country: user.country,
+    fullName: user.fullName || '',
+    email: user.email || '',
+    phone: user.phone || '',
+    city: user.city || 'Colombo',
+    country: user.country || 'Sri Lanka',
     preferredCurrency: user.preferredCurrency
   });
   const [profileSuccessMsg, setProfileSuccessMsg] = useState(false);
 
+  // Personal Profile Field Validation
+  const validatePlaceName = (value: string, label: string): string | null => {
+    const trimmed = (value || '').trim();
+    if (!trimmed) return `${label} is required.`;
+    if (/\d/.test(trimmed)) return `${label} cannot contain numbers.`;
+    if (trimmed.length < 2 || !/^[A-Za-zÀ-ÖØ-öø-ÿ\s.'-]+$/.test(trimmed)) {
+      return `Please enter a valid ${label.toLowerCase()} name (letters only).`;
+    }
+    return null;
+  };
+
+  const fullNameError = validateFullName(formData.fullName);
+  const emailError = validateEmail(formData.email);
+  const phoneError = validatePhoneNumber(formData.phone);
+  const cityError = validatePlaceName(formData.city, 'City');
+  const countryError = validatePlaceName(formData.country, 'Country');
+  const isProfileValid = !fullNameError && !emailError && !phoneError && !cityError && !countryError;
+
   // Avatar Edit & Upload State
   const [showAvatarModal, setShowAvatarModal] = useState(false);
-  const [avatarDraft, setAvatarDraft] = useState(user.avatar);
-  const [customUrlInput, setCustomUrlInput] = useState('');
+  const [avatarDraft, setAvatarDraft] = useState(hasCustomAvatar(user.avatar) ? user.avatar : '');
+  const [resizedInfo, setResizedInfo] = useState<ResizedImageResult | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Cancellation Modal State
@@ -90,31 +114,94 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
   const pastBookings = bookings.filter((b) => b.status === 'completed' || b.status === 'cancelled');
   const savedRooms = rooms.filter((r) => user.savedRoomIds.includes(r.id));
 
-  // Handle local file upload (images from computer/phone)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const userHasPhoto = hasCustomAvatar(user.avatar);
+  const displayAvatarUrl = getAvatarUrl(user.avatar);
+
+  // Handle local file selection: reduce resolution on React frontend canvas first
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          const dataUrl = event.target.result as string;
-          setAvatarDraft(dataUrl);
-        }
-      };
-      reader.readAsDataURL(file);
+    e.target.value = '';
+    if (!file) return;
+
+    setAvatarError('');
+    try {
+      // Reduce image resolution to max 360x360 px (JPEG 0.80) in React frontend before sending to backend
+      const resized = await resizeImageForUpload(file, 360, 0.8);
+      setResizedInfo(resized);
+      setAvatarDraft(resized.base64DataUrl);
+      setShowAvatarModal(true);
+    } catch (err: any) {
+      setAvatarError(err?.message || 'Failed to process selected image.');
+      setShowAvatarModal(true);
     }
   };
 
-  const handleSaveAvatar = () => {
-    onUpdateProfile({ avatar: avatarDraft });
-    setShowAvatarModal(false);
-    setProfileSuccessMsg(true);
-    setTimeout(() => setProfileSuccessMsg(false), 3000);
+  // Upload resized image to Backend -> ImgBB -> Save URL in MySQL Database
+  const handleSaveAvatar = async () => {
+    setAvatarError('');
+    setIsUploadingAvatar(true);
+    try {
+      if (!avatarDraft || avatarDraft.trim() === '') {
+        if (onRemoveAvatar) {
+          await onRemoveAvatar();
+        } else {
+          await onUpdateProfile({ avatar: '' });
+        }
+      } else if (avatarDraft.startsWith('data:image/')) {
+        if (onUploadAvatar) {
+          await onUploadAvatar(avatarDraft);
+        } else {
+          await onUpdateProfile({ avatar: avatarDraft });
+        }
+      } else {
+        await onUpdateProfile({ avatar: avatarDraft.trim() });
+      }
+      setResizedInfo(null);
+      setShowAvatarModal(false);
+      setProfileSuccessMsg(true);
+      setTimeout(() => setProfileSuccessMsg(false), 3000);
+    } catch (err: any) {
+      setAvatarError(err?.message || 'Failed to upload profile photo.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
   };
 
-  const handleProfileSave = (e: React.FormEvent) => {
+  // Remove profile photo and revert to "No DP"
+  const handleRemovePhoto = async () => {
+    setAvatarError('');
+    setIsUploadingAvatar(true);
+    try {
+      if (onRemoveAvatar) {
+        await onRemoveAvatar();
+      } else {
+        await onUpdateProfile({ avatar: '' });
+      }
+      setAvatarDraft('');
+      setResizedInfo(null);
+      setShowAvatarModal(false);
+      setProfileSuccessMsg(true);
+      setTimeout(() => setProfileSuccessMsg(false), 3000);
+    } catch (err: any) {
+      setAvatarError(err?.message || 'Failed to remove profile photo.');
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleProfileSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateProfile(formData);
+    if (!isProfileValid) {
+      return;
+    }
+    await onUpdateProfile({
+      fullName: formData.fullName.trim(),
+      email: formData.email.trim(),
+      phone: formData.phone.trim(),
+      city: formData.city.trim(),
+      country: formData.country.trim(),
+      preferredCurrency: formData.preferredCurrency
+    });
     setIsEditingProfile(false);
     setProfileSuccessMsg(true);
     setTimeout(() => setProfileSuccessMsg(false), 3000);
@@ -159,29 +246,50 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           <div className="flex items-center gap-4 sm:gap-6 text-center sm:text-left flex-col sm:flex-row w-full md:w-auto min-w-0 max-w-full justify-center sm:justify-start">
             
             {/* Avatar with Edit Camera Badge */}
-            <div
-              onClick={() => {
-                setAvatarDraft(user.avatar);
-                setShowAvatarModal(true);
-              }}
-              className="relative group cursor-pointer shrink-0"
-              title="Click to change profile photo"
-            >
-              <img
-                src={user.avatar}
-                alt={user.fullName}
-                className="w-18 h-18 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-[#0D4739]/30 dark:border-[#C2A26F]/40 shadow-md group-hover:brightness-95 transition-all"
-              />
-              <div className="absolute inset-0 rounded-full bg-black/20 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-xs font-medium">
-                Change
-              </div>
-              <button
-                type="button"
-                className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#0D4739] text-white flex items-center justify-center shadow-md hover:bg-[#083329] transition-transform hover:scale-110 cursor-pointer"
-                title="Change Profile Photo"
+            <div className="relative group shrink-0">
+              <div
+                onClick={() => {
+                  setAvatarError('');
+                  setResizedInfo(null);
+                  setAvatarDraft(hasCustomAvatar(user.avatar) ? user.avatar : '');
+                  setShowAvatarModal(true);
+                }}
+                className="relative cursor-pointer"
+                title={userHasPhoto ? 'Click to edit or remove profile photo' : 'Click to add profile photo'}
               >
-                <Camera className="w-3.5 h-3.5" />
-              </button>
+                <img
+                  src={displayAvatarUrl}
+                  alt={user.fullName}
+                  onError={(e) => {
+                    e.currentTarget.src = NO_DP_AVATAR;
+                  }}
+                  className="w-18 h-18 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-[#0D4739]/30 dark:border-[#C2A26F]/40 shadow-md group-hover:brightness-95 transition-all bg-stone-800"
+                />
+                <div className="absolute inset-0 rounded-full bg-black/35 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-white text-[11px] font-semibold">
+                  {userHasPhoto ? 'Edit Photo' : 'Add Photo'}
+                </div>
+                <button
+                  type="button"
+                  className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#0D4739] text-white flex items-center justify-center shadow-md hover:bg-[#083329] transition-transform hover:scale-110 cursor-pointer"
+                  title={userHasPhoto ? 'Edit Profile Photo' : 'Add Profile Photo'}
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {userHasPhoto && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRemovePhoto();
+                  }}
+                  disabled={isUploadingAvatar}
+                  className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-red-600 hover:bg-red-700 text-white flex items-center justify-center shadow-md transition-transform hover:scale-110 cursor-pointer"
+                  title="Remove Profile Photo"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              )}
             </div>
 
             <div className="min-w-0 max-w-full overflow-hidden">
@@ -196,9 +304,30 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               <p className="text-xs sm:text-sm text-stone-500 dark:text-stone-400 mt-1 break-all sm:break-words max-w-full">
                 {user.email} · {user.phone} · {user.city}, {user.country}
               </p>
-              <p className="text-xs text-stone-400 dark:text-stone-500 mt-0.5">
-                Member since {user.memberSince}
-              </p>
+              <div className="flex items-center justify-center sm:justify-start gap-2 mt-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="text-[11px] font-semibold text-[#0D4739] dark:text-[#C2A26F] hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <Upload className="w-3 h-3" />
+                  <span>{userHasPhoto ? 'Change Photo' : 'Add Profile Photo'}</span>
+                </button>
+                {userHasPhoto && (
+                  <>
+                    <span className="text-stone-300 dark:text-stone-700">·</span>
+                    <button
+                      type="button"
+                      onClick={handleRemovePhoto}
+                      disabled={isUploadingAvatar}
+                      className="text-[11px] font-semibold text-red-600 dark:text-red-400 hover:underline flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                      <span>Remove Photo</span>
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -336,17 +465,26 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="mt-4">
-                      <h3 className="font-serif text-2xl font-medium text-stone-900 dark:text-stone-100">
-                        {bk.room.name}
-                      </h3>
-                      <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                        {bk.room.location} · {bk.room.view}
-                      </p>
+                    <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="font-serif text-2xl font-medium text-stone-900 dark:text-stone-100">
+                          {bk.room.name}
+                        </h3>
+                        <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                          {bk.room.location} · {bk.room.view}
+                        </p>
+                      </div>
+                      <span className="px-3.5 py-1.5 rounded-xl bg-[#0D4739] text-white font-mono text-xs font-bold shadow-sm">
+                        Assigned Room #{bk.roomNumber || '101'}
+                      </span>
                     </div>
 
                     {/* Dates & Guests Grid */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4 p-4 bg-[#F8F8F5] dark:bg-[#12201C] rounded-2xl text-xs border border-stone-100 dark:border-[#1F332C]">
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-4 p-4 bg-[#F8F8F5] dark:bg-[#12201C] rounded-2xl text-xs border border-stone-100 dark:border-[#1F332C]">
+                      <div>
+                        <span className="text-stone-400 dark:text-stone-500 block font-medium">Room #</span>
+                        <span className="font-mono font-bold text-[#0D4739] dark:text-[#C2A26F]">#{bk.roomNumber || '101'}</span>
+                      </div>
                       <div>
                         <span className="text-stone-400 dark:text-stone-500 block font-medium">Check-in</span>
                         <span className="font-semibold text-stone-900 dark:text-stone-100">{bk.checkIn}</span>
@@ -432,10 +570,13 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                       />
                     </div>
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <h4 className="font-serif font-medium text-lg text-stone-900 dark:text-stone-100">
                           {bk.room.name}
                         </h4>
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300">
+                          Room #{bk.roomNumber || '101'}
+                        </span>
                         <span
                           className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                             bk.status === 'completed'
@@ -447,7 +588,7 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
                         </span>
                       </div>
                       <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                        Ref: {bk.bookingReference} · {bk.checkIn} to {bk.checkOut} ({bk.nights} nights)
+                        Ref: {bk.bookingReference} · Room #{bk.roomNumber || '101'} · {bk.checkIn} to {bk.checkOut} ({bk.nights} nights)
                       </p>
                       {bk.cancellationReason && (
                         <p className="text-xs text-red-600 dark:text-red-400 mt-1">
@@ -626,114 +767,243 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
           <div className="flex flex-col sm:flex-row items-center gap-5 p-4 bg-stone-50/80 dark:bg-[#12201C] rounded-2xl border border-stone-200/80 dark:border-[#1F332C] mb-6">
             <div className="relative group shrink-0">
               <img
-                src={user.avatar}
+                src={displayAvatarUrl}
                 alt={user.fullName}
-                className="w-16 h-16 rounded-full object-cover border-2 border-[#0D4739]/30 dark:border-[#C2A26F]/40 shadow-sm"
+                onError={(e) => {
+                  e.currentTarget.src = NO_DP_AVATAR;
+                }}
+                className="w-16 h-16 rounded-full object-cover border-2 border-[#0D4739]/30 dark:border-[#C2A26F]/40 shadow-sm bg-stone-800"
               />
             </div>
             <div className="flex-1 text-center sm:text-left">
-              <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
-                Profile Photo
-              </h4>
+              <div className="flex items-center justify-center sm:justify-start gap-2">
+                <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                  Profile Photo
+                </h4>
+                <span
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                    userHasPhoto
+                      ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-stone-200 dark:bg-stone-800 text-stone-600 dark:text-stone-400'
+                  }`}
+                >
+                </span>
+              </div>
               <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                Upload a picture from your device, paste a link, or pick an avatar preset.
+                {userHasPhoto
+                  ? 'Your profile photo is saved. You can replace or remove it anytime.'
+                  : 'No profile photo uploaded yet'}
               </p>
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2.5">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-3.5 py-1.5 bg-[#0D4739] hover:bg-[#083329] text-white text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                  disabled={isUploadingAvatar}
+                  className="px-3.5 py-1.5 bg-[#0D4739] hover:bg-[#083329] text-white text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  <span>Upload Image</span>
+                  <span>{userHasPhoto ? 'Change Photo' : 'Add Photo'}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setAvatarDraft(user.avatar);
+                    setAvatarError('');
+                    setResizedInfo(null);
+                    setAvatarDraft(hasCustomAvatar(user.avatar) ? user.avatar : '');
                     setShowAvatarModal(true);
                   }}
-                  className="px-3.5 py-1.5 bg-white dark:bg-[#172A24] border border-stone-300 dark:border-[#1F332C] hover:bg-stone-50 dark:hover:bg-[#1E362F] text-stone-700 dark:text-stone-200 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                  disabled={isUploadingAvatar}
+                  className="px-3.5 py-1.5 bg-white dark:bg-[#172A24] border border-stone-300 dark:border-[#1F332C] hover:bg-stone-50 dark:hover:bg-[#1E362F] text-stone-700 dark:text-stone-200 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
                 >
-                  <ImageIcon className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
-                  <span>Choose Presets</span>
+                  <Edit3 className="w-3.5 h-3.5 text-stone-500 dark:text-stone-400" />
+                  <span>Edit Photo</span>
                 </button>
+                {userHasPhoto && (
+                  <button
+                    type="button"
+                    onClick={handleRemovePhoto}
+                    disabled={isUploadingAvatar}
+                    className="px-3.5 py-1.5 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 hover:bg-red-100 dark:hover:bg-red-900/60 text-red-600 dark:text-red-300 text-xs font-semibold rounded-lg shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Remove Photo</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>
 
-          <form onSubmit={handleProfileSave} className="space-y-4">
+          <form onSubmit={handleProfileSave} noValidate className="space-y-4">
             <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1">
-                Full Name
+              <label
+                className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${
+                  fullNameError
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-stone-700 dark:text-stone-300'
+                }`}
+              >
+                Full Name <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 required
                 value={formData.fullName}
                 onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                placeholder="e.g. Thilina Kavishan"
+                className={`w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors ${
+                  fullNameError
+                    ? 'bg-red-50/60 dark:bg-red-950/30 border-2 border-red-500 dark:border-red-500 text-red-900 dark:text-red-200 focus:ring-red-500'
+                    : 'bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                }`}
               />
+              {fullNameError && (
+                <p className="mt-1.5 text-xs text-red-600 dark:text-red-400 font-semibold flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600 dark:text-red-400" />
+                  <span>{fullNameError}</span>
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1">
-                  Email Address
+                <label
+                  className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${
+                    emailError
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-stone-700 dark:text-stone-300'
+                  }`}
+                >
+                  Email Address <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="email"
                   required
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                  placeholder="you@domain.com"
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors ${
+                    emailError
+                      ? 'bg-red-50/60 dark:bg-red-950/30 border-2 border-red-500 dark:border-red-500 text-red-900 dark:text-red-200 focus:ring-red-500'
+                      : 'bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
                 />
+                {emailError && (
+                  <p className="mt-1.5 text-xs text-red-600 dark:text-red-400 font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600 dark:text-red-400" />
+                    <span>{emailError}</span>
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1">
-                  Mobile Number
+                <label
+                  className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${
+                    phoneError
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-stone-700 dark:text-stone-300'
+                  }`}
+                >
+                  Mobile Number <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="tel"
                   required
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                  placeholder="0771234567 or +94 77 123 4567"
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors ${
+                    phoneError
+                      ? 'bg-red-50/60 dark:bg-red-950/30 border-2 border-red-500 dark:border-red-500 text-red-900 dark:text-red-200 focus:ring-red-500'
+                      : 'bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
                 />
+                {phoneError && (
+                  <p className="mt-1.5 text-xs text-red-600 dark:text-red-400 font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600 dark:text-red-400" />
+                    <span>{phoneError}</span>
+                  </p>
+                )}
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1">
-                  City
+                <label
+                  className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${
+                    cityError
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-stone-700 dark:text-stone-300'
+                  }`}
+                >
+                  City <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
+                  required
                   value={formData.city}
                   onChange={(e) => setFormData({ ...formData, city: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                  placeholder="e.g. Colombo"
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors ${
+                    cityError
+                      ? 'bg-red-50/60 dark:bg-red-950/30 border-2 border-red-500 dark:border-red-500 text-red-900 dark:text-red-200 focus:ring-red-500'
+                      : 'bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
                 />
+                {cityError && (
+                  <p className="mt-1.5 text-xs text-red-600 dark:text-red-400 font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600 dark:text-red-400" />
+                    <span>{cityError}</span>
+                  </p>
+                )}
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1">
-                  Country
+                <label
+                  className={`block text-xs font-semibold uppercase tracking-wider mb-1 ${
+                    countryError
+                      ? 'text-red-600 dark:text-red-400'
+                      : 'text-stone-700 dark:text-stone-300'
+                  }`}
+                >
+                  Country <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
+                  required
                   value={formData.country}
                   onChange={(e) => setFormData({ ...formData, country: e.target.value })}
-                  className="w-full px-3.5 py-2.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-sm text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-2 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
+                  placeholder="e.g. Sri Lanka"
+                  className={`w-full px-3.5 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 transition-colors ${
+                    countryError
+                      ? 'bg-red-50/60 dark:bg-red-950/30 border-2 border-red-500 dark:border-red-500 text-red-900 dark:text-red-200 focus:ring-red-500'
+                      : 'bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] text-stone-900 dark:text-stone-100 focus:bg-white dark:focus:bg-[#12201C] focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]'
+                  }`}
                 />
+                {countryError && (
+                  <p className="mt-1.5 text-xs text-red-600 dark:text-red-400 font-semibold flex items-center gap-1.5">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-red-600 dark:text-red-400" />
+                    <span>{countryError}</span>
+                  </p>
+                )}
               </div>
             </div>
+
+            {/*!isProfileValid && (
+              <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800 text-xs text-red-600 dark:text-red-400 font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-red-600 dark:text-red-400" />
+                <span>Please fix the invalid details highlighted in red before saving</span>
+              </div>
+            )*/}
 
             <div className="pt-4 flex items-center justify-end gap-3">
               <button
                 type="submit"
-                className="px-6 py-2.5 bg-[#0D4739] hover:bg-[#083329] text-white text-sm font-semibold rounded-xl transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+                disabled={!isProfileValid}
+                className={`px-6 py-2.5 text-sm font-semibold rounded-xl transition-all shadow-sm flex items-center gap-2 ${
+                  isProfileValid
+                    ? 'bg-[#0D4739] hover:bg-[#083329] text-white cursor-pointer'
+                    : 'bg-red-100 dark:bg-red-950/50 text-red-500 dark:text-red-400 border border-red-300 dark:border-red-800/60 opacity-75 cursor-not-allowed'
+                }`}
               >
                 <Save className="w-4 h-4" />
                 <span>Save Profile Changes</span>
@@ -906,101 +1176,70 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
           <div className="bg-white dark:bg-[#101C18] rounded-3xl p-4 sm:p-6 max-w-md w-full shadow-2xl border border-stone-200 dark:border-[#1F332C] relative animate-in fade-in zoom-in-95 my-auto max-h-[calc(100dvh-2rem)] sm:max-h-[85vh] flex flex-col overflow-hidden">
             <button
-              onClick={() => setShowAvatarModal(false)}
-              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 flex items-center justify-center transition-colors cursor-pointer z-10"
+              onClick={() => !isUploadingAvatar && setShowAvatarModal(false)}
+              disabled={isUploadingAvatar}
+              className="absolute top-4 right-4 w-8 h-8 rounded-full bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-600 dark:text-stone-300 flex items-center justify-center transition-colors cursor-pointer z-10 disabled:opacity-50"
             >
               <X className="w-4 h-4" />
             </button>
 
             {/* Header Lockup (Pinned at Top) */}
-            <div className="shrink-0 text-center pb-2 border-b border-stone-100 dark:border-[#1F332C] pr-8 pl-8">
-              <div className="w-8 h-8 rounded-full bg-[#0D4739]/10 dark:bg-[#C2A26F]/15 text-[#0D4739] dark:text-[#C2A26F] flex items-center justify-center mx-auto mb-1">
+            <div className="shrink-0 text-center pb-3 border-b border-stone-100 dark:border-[#1F332C] pr-8 pl-8">
+              <div className="w-9 h-9 rounded-full bg-[#0D4739]/10 dark:bg-[#C2A26F]/15 text-[#0D4739] dark:text-[#C2A26F] flex items-center justify-center mx-auto mb-1.5">
                 <Camera className="w-4 h-4" />
               </div>
               <h3 className="font-serif text-lg sm:text-xl font-medium text-stone-900 dark:text-stone-100">
-                Change Profile Photo
+                {userHasPhoto ? 'Edit or Remove Profile Photo' : 'Add Profile Photo'}
               </h3>
-              <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                Upload your picture or pick a vacation avatar
-              </p>
             </div>
 
-            {/* Scrollable Modal Content (Protected by min-h-0) */}
-            <div className="flex-1 min-h-0 overflow-y-auto pr-1 py-3 space-y-3.5 overscroll-contain">
+            {/* Scrollable Modal Content */}
+            <div className="flex-1 min-h-0 overflow-y-auto pr-1 py-4 space-y-4 overscroll-contain">
               {/* Active Preview */}
-              <div className="flex flex-col items-center justify-center py-0.5">
+              <div className="flex flex-col items-center justify-center">
                 <img
-                  src={avatarDraft}
+                  src={avatarDraft ? avatarDraft : NO_DP_AVATAR}
                   alt="Avatar preview"
-                  className="w-16 h-16 rounded-full object-cover border-3 border-[#0D4739]/20 dark:border-[#C2A26F]/30 shadow-md mb-1"
+                  onError={(e) => {
+                    e.currentTarget.src = NO_DP_AVATAR;
+                  }}
+                  className="w-24 h-24 rounded-full object-cover border-3 border-[#0D4739]/30 dark:border-[#C2A26F]/40 shadow-md mb-2 bg-stone-800"
                 />
-                <span className="text-[10px] text-stone-400 dark:text-stone-500 font-medium">
-                  Live Preview
-                </span>
+                
               </div>
 
+              {avatarError && (
+                <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 text-xs text-red-600 dark:text-red-300 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{avatarError}</span>
+                </div>
+              )}
+
               {/* Option 1: Upload from device */}
-              <div>
+              <div className="space-y-2">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2 bg-stone-50 dark:bg-[#172A24] hover:bg-stone-100 dark:hover:bg-[#1E362F] border border-stone-300 dark:border-[#1F332C] rounded-xl text-xs font-semibold text-stone-800 dark:text-stone-200 flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs"
+                  disabled={isUploadingAvatar}
+                  className="w-full py-2.5 bg-[#0D4739]/10 dark:bg-[#172A24] hover:bg-[#0D4739]/15 dark:hover:bg-[#1E362F] border border-[#0D4739]/30 dark:border-[#1F332C] rounded-xl text-xs font-semibold text-[#0D4739] dark:text-[#C2A26F] flex items-center justify-center gap-2 cursor-pointer transition-colors shadow-2xs disabled:opacity-50"
                 >
-                  <Upload className="w-3.5 h-3.5 text-[#0D4739] dark:text-[#C2A26F]" />
-                  <span>Upload from Computer / Phone</span>
+                  <Upload className="w-4 h-4" />
+                  <span>{avatarDraft ? 'Select Another Photo from Device' : 'Select Photo from Computer / Phone'}</span>
                 </button>
-              </div>
 
-              {/* Option 2: Curated Presets */}
-              <div>
-                <label className="block text-[11px] font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1.5 text-center sm:text-left">
-                  Or Select from Resort Avatars
-                </label>
-                <div className="grid grid-cols-6 gap-2">
-                  {PRESET_AVATARS.map((url, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => setAvatarDraft(url)}
-                      className={`aspect-square rounded-full overflow-hidden border-2 transition-all cursor-pointer ${
-                        avatarDraft === url
-                          ? 'border-[#0D4739] dark:border-[#C2A26F] ring-2 ring-[#0D4739]/40 dark:ring-[#C2A26F]/40 scale-105 shadow-sm'
-                          : 'border-transparent hover:scale-105 opacity-80 hover:opacity-100'
-                      }`}
-                    >
-                      <img src={url} alt={`Preset ${idx + 1}`} className="w-full h-full object-cover" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Option 3: Image URL input */}
-              <div>
-                <label className="block text-[11px] font-semibold text-stone-600 dark:text-stone-400 mb-1">
-                  Or Paste Image Link (URL)
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    placeholder="https://example.com/photo.jpg"
-                    value={customUrlInput}
-                    onChange={(e) => setCustomUrlInput(e.target.value)}
-                    className="flex-1 px-3 py-1.5 bg-stone-50 dark:bg-[#172A24]/40 border border-stone-300 dark:border-[#1F332C] rounded-xl text-xs text-stone-900 dark:text-stone-100 placeholder:text-stone-400 dark:placeholder:text-stone-600 focus:bg-white dark:focus:bg-[#12201C] focus:outline-none focus:ring-1 focus:ring-[#0D4739] dark:focus:ring-[#C2A26F]"
-                  />
+                {(avatarDraft || userHasPhoto) && (
                   <button
                     type="button"
-                    onClick={() => {
-                      if (customUrlInput.trim()) {
-                        setAvatarDraft(customUrlInput.trim());
-                        setCustomUrlInput('');
-                      }
-                    }}
-                    className="px-3 py-1.5 bg-stone-900 dark:bg-stone-200 hover:bg-stone-800 dark:hover:bg-white text-white dark:text-stone-900 rounded-xl text-xs font-medium cursor-pointer"
+                    onClick={handleRemovePhoto}
+                    disabled={isUploadingAvatar}
+                    className="w-full py-2.5 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-900/50 border border-red-200 dark:border-red-900/40 rounded-xl text-xs font-semibold text-red-600 dark:text-red-300 flex items-center justify-center gap-2 cursor-pointer transition-colors disabled:opacity-50"
                   >
-                    Use
+                    <Trash2 className="w-4 h-4" />
+                    <span>Remove Profile Photo (Reset to No DP)</span>
                   </button>
-                </div>
+                )}
               </div>
+
             </div>
 
             {/* Action buttons (Always visible at the bottom) */}
@@ -1008,16 +1247,25 @@ export const UserDashboardView: React.FC<UserDashboardViewProps> = ({
               <button
                 type="button"
                 onClick={() => setShowAvatarModal(false)}
-                className="flex-1 py-2.5 border border-stone-300 dark:border-[#1F332C] rounded-xl text-xs font-semibold text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#172A24] transition-colors cursor-pointer"
+                disabled={isUploadingAvatar}
+                className="flex-1 py-2.5 border border-stone-300 dark:border-[#1F332C] rounded-xl text-xs font-semibold text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-[#172A24] transition-colors cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSaveAvatar}
-                className="flex-1 py-2.5 bg-[#0D4739] hover:bg-[#083329] text-white rounded-xl text-xs font-semibold transition-colors shadow-sm cursor-pointer"
+                disabled={isUploadingAvatar}
+                className="flex-1 py-2.5 bg-[#0D4739] hover:bg-[#083329] text-white rounded-xl text-xs font-semibold transition-colors shadow-sm cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-60"
               >
-                Save Photo
+                {isUploadingAvatar ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Uploading...</span>
+                  </>
+                ) : (
+                  <span>{avatarDraft ? 'Upload & Save Photo' : 'Save No DP'}</span>
+                )}
               </button>
             </div>
           </div>

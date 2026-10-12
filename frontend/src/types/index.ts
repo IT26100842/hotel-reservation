@@ -24,6 +24,14 @@ export interface Room {
   cancellationPolicy: string;
   bedType: string;
   view: string;
+  status?: string;
+  totalRooms?: number;
+  baseRoomNumber?: number;
+  occupiedRooms?: number;
+  availableRooms?: number;
+  roomNumbers?: string[];
+  occupiedRoomNumbers?: string[];
+  availableRoomNumbers?: string[];
 }
 
 export interface Review {
@@ -35,6 +43,8 @@ export interface Review {
   comment: string;
   date: string;
   roomBooked: string;
+  likes?: number;
+  hearts?: number;
 }
 
 export type PaymentMethodType = 'payhere' | 'card' | 'paypal' | 'pay_at_hotel';
@@ -43,6 +53,7 @@ export interface Booking {
   id: string;
   bookingReference: string;
   roomId: string;
+  roomNumber?: string;
   room: Room;
   checkIn: string;
   checkOut: string;
@@ -65,7 +76,7 @@ export interface Booking {
   promoCodeApplied?: string;
   totalAmount: number;
   currency: string;
-  status: 'confirmed' | 'cancelled' | 'completed';
+  status: 'confirmed' | 'checked_in' | 'cancelled' | 'completed';
   bookedAt: string;
   cancellationReason?: string;
   userRating?: number;
@@ -96,8 +107,38 @@ export interface UserProfile {
   preferredCurrency: string;
   memberSince: string;
   savedRoomIds: string[];
+  nicPassport?: string;
+  role?: 'super_admin' | 'admin' | 'manager' | 'guest' | string;
+  status?: string;
 }
 
-export type AppView = 'home' | 'search' | 'room-detail' | 'checkout' | 'dashboard';
+export type AppView = 'home' | 'search' | 'room-detail' | 'checkout' | 'dashboard' | 'admin';
 export type AuthModalType = 'login' | 'register' | 'forgot-password' | null;
 export type ThemeMode = 'light' | 'dark' | 'system';
+
+export type AdminTab = 'overview' | 'rooms' | 'bookings' | 'admins' | 'guests' | 'reviews' | 'promos' | 'profile';
+
+export interface AdminStats {
+  totalRevenue: number;
+  totalBookings: number;
+  confirmedBookings: number;
+  cancelledBookings: number;
+  totalRooms: number;
+  totalPhysicalRooms?: number;
+  occupiedPhysicalRooms?: number;
+  availablePhysicalRooms?: number;
+  totalUsers: number;
+  totalAdmins: number;
+  totalReviews: number;
+  occupancyRate: number;
+}
+
+export interface PromoCodeItem {
+  id?: number;
+  code: string;
+  description: string;
+  discountType: 'percentage' | 'fixed' | string;
+  discountValue: number;
+  minSpend?: number;
+  isActive: boolean;
+}
