@@ -1,4 +1,4 @@
-package com.wd32.Hotel_Reservation;
+package com.wd50.Hotel_Reservation;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

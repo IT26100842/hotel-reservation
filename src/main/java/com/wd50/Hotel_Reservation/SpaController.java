@@ -1,4 +1,4 @@
-package com.wd32.Hotel_Reservation;
+package com.wd50.Hotel_Reservation;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
