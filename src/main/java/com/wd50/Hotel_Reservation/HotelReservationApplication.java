@@ -1,4 +1,4 @@
-package com.wd32.Hotel_Reservation;
+package com.wd50.Hotel_Reservation;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -18,3 +18,4 @@ public class HotelReservationApplication {
 
 
 }
+
