@@ -1,3 +1,4 @@
+import { PaymentForm } from './PaymentForm';
 import React, { useState } from 'react';
 import { Booking } from '../types';
 import {
@@ -292,6 +293,13 @@ export const AdminBookings: React.FC<AdminBookingsProps> = ({
                   </button>
                 </div>
               </div>
+
+              {selectedBooking.status !== 'cancelled' && (
+                  <PaymentForm
+                      key={selectedBooking.id}
+                      bookingId={selectedBooking.id}
+                  />
+              )}
 
               {/* Guest Information */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 rounded-xl border border-stone-200 dark:border-[#223B33]">
