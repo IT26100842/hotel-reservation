@@ -136,8 +136,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
       {/* Bottom Controls */}
       <div className="p-4 border-t border-[#1C2F29] space-y-2">
         {/* Switch to Client Site */}
-        <button
-          onClick={onGoToSite}
+        <a
+          href="./"
+          target="_blank"
           className="w-full flex items-center justify-between px-3 py-2 text-xs text-stone-300 hover:text-white hover:bg-[#152722] rounded-xl transition-colors cursor-pointer"
         >
           <div className="flex items-center gap-2.5">
@@ -145,7 +146,7 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
             <span>View Public Site</span>
           </div>
           <span className="text-[10px] text-stone-500">/</span>
-        </button>
+        </a>
 
         {/* Theme Toggle */}
         <button
