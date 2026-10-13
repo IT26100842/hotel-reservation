@@ -1,0 +1,6 @@
+{
+  "name": "Serene Stay - Luxury Boutique Hotel & Resort",
+  "description": "Experience barefoot luxury in Sri Lanka. Reserve handcrafted oceanfront suites, deluxe villas, and boutique rooms with seamless booking and payments.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
