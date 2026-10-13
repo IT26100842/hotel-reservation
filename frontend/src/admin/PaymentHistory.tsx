@@ -9,26 +9,29 @@ import type { BillingSummary } from '../services/billingApi';
 import { refundApi } from '../services/refundApi';
 import type { RefundRecord } from '../services/refundApi';
 
+import { paymentVoidApi } from '../services/paymentVoidApi';
+import type { PaymentVoidRecord } from '../services/paymentVoidApi';
+
 import { RefundForm } from './RefundForm';
+import { PaymentVoidForm } from './PaymentVoidForm';
 
 interface PaymentHistoryProps {
     bookingId: string;
-    refreshKey: number;
+    refreshKey?: number;
 }
 
 type HistoryPayment = PaymentRecord & {
     recordedAt?: string | null;
 };
 
-const formatMoney = (amount: number) => {
+function formatMoney(amount: number): string {
     return amount.toLocaleString('en-LK', {
         minimumFractionDigits: 2,
-        maximumFractionDigits: 2
+        maximumFractionDigits: 2,
     });
-};
+}
 
-const formatDate = (value?: string | null) => {
-
+function formatDate(value?: string | null): string {
     if (!value) {
         return 'Not recorded';
     }
@@ -42,120 +45,116 @@ const formatDate = (value?: string | null) => {
     return date.toLocaleString('en-GB', {
         timeZone: 'Asia/Colombo',
         dateStyle: 'medium',
-        timeStyle: 'short'
+        timeStyle: 'short',
     });
-};
+}
 
-const getErrorMessage = (error: unknown) => {
+function getErrorMessage(error: unknown): string {
     return error instanceof Error
         ? error.message
-        : 'Could not load records.';
-};
+        : 'Could not load these records.';
+}
 
-export const PaymentHistory = ({
+function sameId(first: string, second: string): boolean {
+    return first.toUpperCase() === second.toUpperCase();
+}
+
+export function PaymentHistory({
                                    bookingId,
-                                   refreshKey
-                               }: PaymentHistoryProps) => {
-
+                                   refreshKey = 0,
+                               }: PaymentHistoryProps) {
     const [payments, setPayments] = useState<HistoryPayment[]>([]);
     const [refunds, setRefunds] = useState<RefundRecord[]>([]);
+    const [voids, setVoids] = useState<PaymentVoidRecord[]>([]);
     const [summary, setSummary] = useState<BillingSummary | null>(null);
 
     const [loading, setLoading] = useState(true);
-
     const [paymentError, setPaymentError] = useState('');
     const [refundError, setRefundError] = useState('');
+    const [voidError, setVoidError] = useState('');
     const [summaryError, setSummaryError] = useState('');
 
     const [reloadCount, setReloadCount] = useState(0);
     const [notice, setNotice] = useState('');
 
     useEffect(() => {
+        setNotice('');
+    }, [bookingId]);
 
+    useEffect(() => {
         let cancelled = false;
 
-        const loadRecords = async () => {
-
+        async function loadRecords() {
             setLoading(true);
-
-            setPaymentError('');
-            setRefundError('');
-            setSummaryError('');
 
             setPayments([]);
             setRefunds([]);
+            setVoids([]);
             setSummary(null);
 
-            const results = await Promise.allSettled([
+            setPaymentError('');
+            setRefundError('');
+            setVoidError('');
+            setSummaryError('');
+
+            const [
+                paymentResult,
+                summaryResult,
+                refundResult,
+                voidResult,
+            ] = await Promise.allSettled([
                 paymentApi.getByBookingId(bookingId),
                 billingApi.getByBookingId(bookingId),
-                refundApi.getByBookingId(bookingId)
+                refundApi.getByBookingId(bookingId),
+                paymentVoidApi.getByBookingId(bookingId),
             ]);
 
             if (cancelled) {
                 return;
             }
 
-            const paymentResult = results[0];
-            const summaryResult = results[1];
-            const refundResult = results[2];
-
             if (paymentResult.status === 'fulfilled') {
                 setPayments(paymentResult.value);
             } else {
-                setPaymentError(
-                    getErrorMessage(paymentResult.reason)
-                );
+                setPaymentError(getErrorMessage(paymentResult.reason));
             }
 
             if (summaryResult.status === 'fulfilled') {
                 setSummary(summaryResult.value);
             } else {
-                setSummaryError(
-                    getErrorMessage(summaryResult.reason)
-                );
+                setSummaryError(getErrorMessage(summaryResult.reason));
             }
 
             if (refundResult.status === 'fulfilled') {
                 setRefunds(refundResult.value);
             } else {
-                setRefundError(
-                    getErrorMessage(refundResult.reason)
-                );
+                setRefundError(getErrorMessage(refundResult.reason));
+            }
+
+            if (voidResult.status === 'fulfilled') {
+                setVoids(voidResult.value);
+            } else {
+                setVoidError(getErrorMessage(voidResult.reason));
             }
 
             setLoading(false);
-        };
+        }
 
         void loadRecords();
 
         return () => {
             cancelled = true;
         };
-
     }, [bookingId, refreshKey, reloadCount]);
 
-    const handleRefundSaved = () => {
-        setNotice('Refund record saved.');
-        setReloadCount((count) => count + 1);
-    };
-
-    const getRefundedCents = (paymentId: string) => {
-
-        return refunds
-            .filter((refund) => refund.paymentId === paymentId)
-            .reduce(
-                (total, refund) =>
-                    total + Math.round(refund.amount * 100),
-                0
-            );
-    };
+    function handleSaved(message: string) {
+        setNotice(message);
+        setReloadCount((current) => current + 1);
+    }
 
     return (
-        <section className="rounded-xl border border-stone-300 p-4 space-y-4">
-
+        <section className="space-y-4 rounded-xl border border-stone-200 p-4 text-stone-900 dark:border-stone-700 dark:text-white">
             <div className="flex items-center justify-between gap-3">
-
                 <h3 className="font-semibold">
                     Billing &amp; Payment History
                 </h3>
@@ -163,239 +162,277 @@ export const PaymentHistory = ({
                 <button
                     type="button"
                     disabled={loading}
-                    onClick={() => setReloadCount((count) => count + 1)}
-                    className="rounded-lg border border-stone-300 px-3 py-1.5 disabled:opacity-50"
+                    onClick={() => setReloadCount((current) => current + 1)}
+                    className="rounded-lg border border-stone-300 px-3 py-2 text-sm dark:border-stone-600 disabled:opacity-50"
                 >
-                    {loading ? 'Loading...' : 'Refresh'}
+                    Refresh
                 </button>
-
             </div>
 
             {notice && (
-                <p
-                    role="status"
-                    className="text-green-700 dark:text-green-400"
-                >
+                <p role="status" className="text-sm text-green-700 dark:text-green-400">
                     {notice}
                 </p>
             )}
 
-            {loading && (
-                <p role="status" className="text-stone-500 dark:text-stone-400">
-                    Loading records...
+            {loading ? (
+                <p className="text-sm text-stone-500">
+                    Loading billing records...
                 </p>
-            )}
+            ) : (
+                <>
+                    {summaryError && (
+                        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                            Billing: {summaryError}
+                        </p>
+                    )}
 
-            {!loading && summary && (
-                <div className="rounded-lg bg-stone-100 dark:bg-[#142621] p-3 space-y-2">
+                    {summary && (
+                        <div className="space-y-2 rounded-lg bg-stone-100 p-4 text-sm dark:bg-stone-800">
+                            <div className="flex justify-between gap-3">
+                                <span>Invoice total</span>
+                                <span>LKR {formatMoney(summary.totalAmount)}</span>
+                            </div>
 
-                    <div className="flex justify-between gap-3">
-                        <span>Invoice total</span>
-                        <strong>
-                            LKR {formatMoney(summary.totalAmount)}
-                        </strong>
-                    </div>
+                            <div className="flex justify-between gap-3">
+                                <span>Recorded payment total</span>
+                                <span>LKR {formatMoney(summary.receivedAmount)}</span>
+                            </div>
 
-                    <div className="flex justify-between gap-3">
-                        <span>Payments received</span>
-                        <strong>
-                            LKR {formatMoney(summary.receivedAmount)}
-                        </strong>
-                    </div>
+                            <div className="flex justify-between gap-3">
+                                <span>Voided amount</span>
+                                <span>LKR {formatMoney(summary.voidedAmount)}</span>
+                            </div>
 
-                    <div className="flex justify-between gap-3">
-                        <span>Refunds recorded</span>
-                        <strong>
-                            LKR {formatMoney(summary.refundedAmount)}
-                        </strong>
-                    </div>
+                            <div className="flex justify-between gap-3">
+                                <span>Refunds recorded</span>
+                                <span>LKR {formatMoney(summary.refundedAmount)}</span>
+                            </div>
 
-                    <div className="flex justify-between gap-3">
-                        <span>Net paid amount</span>
-                        <strong>
-                            LKR {formatMoney(summary.paidAmount)}
-                        </strong>
-                    </div>
+                            <div className="flex justify-between gap-3 font-medium">
+                                <span>Net paid amount</span>
+                                <span>LKR {formatMoney(summary.paidAmount)}</span>
+                            </div>
 
-                    <div className="flex justify-between gap-3">
-                        <span>Outstanding balance</span>
-                        <strong>
-                            LKR {formatMoney(summary.balanceAmount)}
-                        </strong>
-                    </div>
+                            <div className="flex justify-between gap-3 border-t border-stone-300 pt-2 font-semibold dark:border-stone-600">
+                                <span>Outstanding balance</span>
+                                <span>LKR {formatMoney(summary.balanceAmount)}</span>
+                            </div>
 
-                    {summary.overpaidAmount > 0 && (
-                        <div className="flex justify-between gap-3 text-amber-700 dark:text-amber-400">
-                            <span>Overpaid amount</span>
-                            <strong>
-                                LKR {formatMoney(summary.overpaidAmount)}
-                            </strong>
+                            {summary.overpaidAmount > 0 && (
+                                <div className="flex justify-between gap-3">
+                                    <span>Overpaid amount</span>
+                                    <span>LKR {formatMoney(summary.overpaidAmount)}</span>
+                                </div>
+                            )}
+
+                            <p className="pt-1 font-medium">
+                                Status: {summary.paymentStatus.replace(/_/g, ' ')}
+                            </p>
                         </div>
                     )}
 
-                    <div className="flex justify-between gap-3 border-t border-stone-300 pt-2">
-                        <span>Payment status</span>
-                        <strong>
-                            {summary.paymentStatus.replace(/_/g, ' ')}
-                        </strong>
-                    </div>
+                    {paymentError && (
+                        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                            Payments: {paymentError}
+                        </p>
+                    )}
 
-                </div>
-            )}
+                    {refundError && (
+                        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                            Refunds: {refundError}
+                        </p>
+                    )}
 
-            {summaryError && (
-                <p role="alert" className="text-amber-700 dark:text-amber-400">
-                    Billing summary: {summaryError}
-                </p>
-            )}
+                    {voidError && (
+                        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                            Voids: {voidError}
+                        </p>
+                    )}
 
-            {paymentError && (
-                <p role="alert" className="text-red-600 dark:text-red-400">
-                    Payment history: {paymentError}
-                </p>
-            )}
+                    {(refundError || voidError) && (
+                        <p className="text-sm text-stone-600 dark:text-stone-300">
+                            Refund and void actions will be available after
+                            both record lists load successfully. Try Refresh.
+                        </p>
+                    )}
 
-            {refundError && (
-                <p role="alert" className="text-red-600 dark:text-red-400">
-                    Refund history: {refundError}
-                </p>
-            )}
+                    {!paymentError && payments.length === 0 && (
+                        <p className="text-sm text-stone-500">
+                            No payment records for this booking.
+                        </p>
+                    )}
 
-            {!loading && !paymentError && payments.length === 0 && (
-                <p className="text-stone-500 dark:text-stone-400">
-                    No payments recorded for this booking.
-                </p>
-            )}
+                    {!paymentError && payments.map((payment) => {
+                        const paymentRefunds = refunds.filter((refund) =>
+                            sameId(refund.paymentId, payment.paymentId)
+                        );
 
-            {!loading && !paymentError && payments.length > 0 && (
-                <div className="space-y-3">
-
-                    <h4 className="font-semibold">
-                        Payments
-                    </h4>
-
-                    {payments.map((payment) => {
-
-                        const refundedCents =
-                            getRefundedCents(payment.paymentId);
+                        const refundedCents = paymentRefunds.reduce(
+                            (total, refund) =>
+                                total + Math.round(refund.amount * 100),
+                            0
+                        );
 
                         const availableCents = Math.max(
-                            0,
-                            Math.round(payment.amount * 100) - refundedCents
+                            Math.round(payment.amount * 100) - refundedCents,
+                            0
                         );
+
+                        const voidRecord = voids.find((record) =>
+                            sameId(record.paymentId, payment.paymentId)
+                        );
+
+                        const recordsLoaded = !refundError && !voidError;
 
                         return (
                             <article
                                 key={payment.paymentId}
-                                className="rounded-lg border border-stone-200 dark:border-stone-700 p-3 space-y-2"
+                                className="space-y-3 rounded-lg border border-stone-200 p-4 dark:border-stone-700"
                             >
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <p className="font-medium">
+                                        {payment.paymentMethod} — LKR{' '}
+                                        {formatMoney(payment.amount)}
+                                    </p>
 
-                                <div className="flex items-center justify-between gap-3">
-                  <span className="font-semibold">
-                    {payment.paymentMethod}
-                  </span>
-
-                                    <strong>
-                                        LKR {formatMoney(payment.amount)}
-                                    </strong>
+                                    {voidRecord && (
+                                        <span className="rounded bg-red-100 px-2 py-1 text-xs font-semibold text-red-800 dark:bg-red-950 dark:text-red-300">
+                      VOIDED
+                    </span>
+                                    )}
                                 </div>
 
-                                <p className="text-stone-500 dark:text-stone-400">
-                                    Recorded: {formatDate(payment.recordedAt)}
-                                </p>
-
-                                <p className="break-all">
-                                    Payment ID: {payment.paymentId}
-                                </p>
-
-                                {payment.transactionReference && (
+                                <div className="space-y-1 text-sm text-stone-600 dark:text-stone-300">
                                     <p className="break-all">
-                                        Transaction reference: {payment.transactionReference}
+                                        Payment ID: {payment.paymentId}
                                     </p>
-                                )}
 
-                                {!refundError && (
                                     <p>
-                                        Refunded: LKR {formatMoney(refundedCents / 100)}
+                                        Recorded: {formatDate(payment.recordedAt)}
                                     </p>
+
+                                    {payment.transactionReference && (
+                                        <p className="break-all">
+                                            Transaction reference:{' '}
+                                            {payment.transactionReference}
+                                        </p>
+                                    )}
+
+                                    {!refundError && (
+                                        <p>
+                                            Refunded: LKR{' '}
+                                            {formatMoney(refundedCents / 100)}
+                                        </p>
+                                    )}
+                                </div>
+
+                                {voidRecord && (
+                                    <div className="space-y-1 rounded-lg bg-red-50 p-3 text-sm text-red-900 dark:bg-red-950 dark:text-red-200">
+                                        <p>
+                                            Voided: {formatDate(voidRecord.recordedAt)}
+                                        </p>
+
+                                        <p className="break-all">
+                                            Void ID: {voidRecord.voidId}
+                                        </p>
+
+                                        <p className="whitespace-pre-wrap break-words">
+                                            Reason: {voidRecord.reason}
+                                        </p>
+                                    </div>
                                 )}
 
-                                {!refundError && availableCents > 0 && (
-                                    <details>
-                                        <summary className="cursor-pointer font-semibold text-amber-700 dark:text-amber-400">
-                                            Record a refund
-                                        </summary>
+                                {recordsLoaded &&
+                                    !voidRecord &&
+                                    availableCents > 0 && (
+                                        <details>
+                                            <summary className="cursor-pointer text-sm font-medium">
+                                                Record a refund
+                                            </summary>
 
-                                        <RefundForm
-                                            paymentId={payment.paymentId}
-                                            availableAmount={availableCents / 100}
-                                            onSaved={handleRefundSaved}
-                                        />
-                                    </details>
-                                )}
+                                            <RefundForm
+                                                paymentId={payment.paymentId}
+                                                availableAmount={availableCents / 100}
+                                                onSaved={() =>
+                                                    handleSaved('Refund record saved.')
+                                                }
+                                            />
+                                        </details>
+                                    )}
 
-                                {!refundError && availableCents === 0 && (
-                                    <p className="font-semibold text-amber-700 dark:text-amber-400">
-                                        Fully refunded
-                                    </p>
-                                )}
+                                {recordsLoaded &&
+                                    !voidRecord &&
+                                    availableCents === 0 && (
+                                        <p className="text-sm font-medium">
+                                            Fully refunded
+                                        </p>
+                                    )}
 
+                                {recordsLoaded &&
+                                    !voidRecord &&
+                                    paymentRefunds.length === 0 && (
+                                        <details>
+                                            <summary className="cursor-pointer text-sm font-medium text-red-700 dark:text-red-400">
+                                                Void an incorrect payment record
+                                            </summary>
+
+                                            <PaymentVoidForm
+                                                paymentId={payment.paymentId}
+                                                onSaved={() =>
+                                                    handleSaved('Payment record voided.')
+                                                }
+                                            />
+                                        </details>
+                                    )}
                             </article>
                         );
                     })}
 
-                </div>
-            )}
+                    {!refundError && (
+                        <div className="space-y-3 border-t border-stone-200 pt-4 dark:border-stone-700">
+                            <h4 className="font-semibold">Refund History</h4>
 
-            {!loading && !refundError && (
-                <div className="space-y-3">
+                            {refunds.length === 0 ? (
+                                <p className="text-sm text-stone-500">
+                                    No refund records for this booking.
+                                </p>
+                            ) : (
+                                refunds.map((refund) => (
+                                    <article
+                                        key={refund.refundId}
+                                        className="space-y-1 rounded-lg border border-stone-200 p-3 text-sm dark:border-stone-700"
+                                    >
+                                        <p className="font-medium">
+                                            LKR {formatMoney(refund.amount)}
+                                        </p>
 
-                    <h4 className="font-semibold">
-                        Refund History
-                    </h4>
+                                        <p>
+                                            Recorded: {formatDate(refund.recordedAt)}
+                                        </p>
 
-                    {refunds.length === 0 && (
-                        <p className="text-stone-500 dark:text-stone-400">
-                            No refunds recorded.
-                        </p>
+                                        <p className="break-all">
+                                            Refund ID: {refund.refundId}
+                                        </p>
+
+                                        <p className="break-all">
+                                            Payment ID: {refund.paymentId}
+                                        </p>
+
+                                        <p className="whitespace-pre-wrap break-words">
+                                            Reason: {refund.reason}
+                                        </p>
+                                    </article>
+                                ))
+                            )}
+                        </div>
                     )}
 
-                    {refunds.map((refund) => (
-                        <article
-                            key={refund.refundId}
-                            className="rounded-lg border border-amber-300 dark:border-amber-800 p-3 space-y-2"
-                        >
-
-                            <strong>
-                                LKR {formatMoney(refund.amount)}
-                            </strong>
-
-                            <p className="text-stone-500 dark:text-stone-400">
-                                Recorded: {formatDate(refund.recordedAt)}
-                            </p>
-
-                            <p className="break-all">
-                                Refund ID: {refund.refundId}
-                            </p>
-
-                            <p className="break-all">
-                                Original payment: {refund.paymentId}
-                            </p>
-
-                            <p className="whitespace-pre-wrap break-words">
-                                Reason: {refund.reason}
-                            </p>
-
-                        </article>
-                    ))}
-
-                </div>
+                    <p className="text-xs text-stone-500">
+                        Times are shown in Sri Lanka time.
+                    </p>
+                </>
             )}
-
-            <p className="text-stone-500 dark:text-stone-400">
-                Times shown in Sri Lanka time.
-            </p>
-
         </section>
     );
-};
+}

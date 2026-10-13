@@ -2,6 +2,7 @@ export interface BillingSummary {
     bookingId: string;
     totalAmount: number;
     receivedAmount: number;
+    voidedAmount: number;
     refundedAmount: number;
     paidAmount: number;
     balanceAmount: number;
@@ -12,11 +13,9 @@ export interface BillingSummary {
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const billingApi = {
-
     async getByBookingId(
         bookingId: string
     ): Promise<BillingSummary> {
-
         const response = await fetch(
             `${BASE_URL}/billing/booking/${encodeURIComponent(bookingId)}`
         );
@@ -29,6 +28,6 @@ export const billingApi = {
             );
         }
 
-        return response.json();
-    }
+        return response.json() as Promise<BillingSummary>;
+    },
 };
