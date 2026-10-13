@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { AdminTab, Booking, Room, UserProfile, AdminStats, PromoCodeItem, Review } from '../types';
-import { INITIAL_ROOMS, INITIAL_BOOKINGS, INITIAL_REVIEWS } from '../data/mockData';
 import { roomApi, bookingApi, adminApi, promoApi, reviewApi, authApi } from '../services/api';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminHeader } from './AdminHeader';
@@ -34,27 +33,47 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
   const [currentTab, setCurrentTab] = useState<AdminTab>('overview');
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  // 3. Live Data State
-  const [rooms, setRooms] = useState<Room[]>(INITIAL_ROOMS);
-  const [bookings, setBookings] = useState<Booking[]>(INITIAL_BOOKINGS);
+  // 3. Live Data State - initialized empty without mock data
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [admins, setAdmins] = useState<UserProfile[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
-  const [reviews, setReviews] = useState<Review[]>(INITIAL_REVIEWS);
-  const [promos, setPromos] = useState<PromoCodeItem[]>([
-    { id: 1, code: 'SERENE10', description: '10% Coastal discount', discountType: 'percentage', discountValue: 10, minSpend: 10000, isActive: true },
-    { id: 2, code: 'WELCOME15', description: '15% Welcome special', discountType: 'percentage', discountValue: 15, minSpend: 15000, isActive: true },
-    { id: 3, code: 'CEYLON20', description: '20% Villa discount', discountType: 'percentage', discountValue: 20, minSpend: 25000, isActive: true }
-  ]);
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [promos, setPromos] = useState<PromoCodeItem[]>([]);
   const [stats, setStats] = useState<AdminStats>({
-    totalRevenue: 345000,
-    totalBookings: 6,
-    confirmedBookings: 5,
-    cancelledBookings: 1,
-    totalRooms: 6,
-    totalUsers: 8,
-    totalAdmins: 2,
-    totalReviews: 4,
-    occupancyRate: 85
+    totalRevenue: 0,
+    totalBookings: 0,
+    confirmedBookings: 0,
+    cancelledBookings: 0,
+    totalRooms: 0,
+    totalUsers: 0,
+    totalAdmins: 0,
+    totalReviews: 0,
+    occupancyRate: 0
+  });
+
+  // Track cached status per tab (so visited tabs don't re-fetch from server)
+  const [loadedTabs, setLoadedTabs] = useState<Record<AdminTab, boolean>>({
+    overview: false,
+    rooms: false,
+    bookings: false,
+    admins: false,
+    guests: false,
+    reviews: false,
+    promos: false,
+    profile: true
+  });
+
+  // Track loading status per tab
+  const [tabLoading, setTabLoading] = useState<Record<AdminTab, boolean>>({
+    overview: false,
+    rooms: false,
+    bookings: false,
+    admins: false,
+    guests: false,
+    reviews: false,
+    promos: false,
+    profile: false
   });
 
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -69,51 +88,160 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
     setTimeout(() => setToast(null), 3500);
   };
 
-  // 4. Fetch All Admin Data
-  const refreshAllData = async () => {
-    setIsRefreshing(true);
-    try {
-      const [roomsData, bookingsData, adminsData, usersData, reviewsData, promosData, statsData] = await Promise.all([
-        roomApi.getAll().catch(() => INITIAL_ROOMS),
-        bookingApi.getAll().catch(() => INITIAL_BOOKINGS),
-        adminApi.getAdmins().catch(() => []),
-        adminApi.getAllUsers().catch(() => []),
-        reviewApi.getAll().catch(() => INITIAL_REVIEWS),
-        promoApi.getAll().catch(() => promos),
-        adminApi.getStats().catch(() => stats)
-      ]);
-
-      if (roomsData) setRooms(roomsData);
-      if (bookingsData) setBookings(bookingsData);
-      if (adminsData && adminsData.length > 0) {
-        setAdmins(adminsData);
-        if (adminUser) {
-          const matched =
-            adminsData.find((a) => a.id === adminUser.id) ||
-            adminsData.find((a) => a.email.toLowerCase() === adminUser.email.toLowerCase());
-          if (matched && (matched.id !== adminUser.id || matched.avatar !== adminUser.avatar)) {
-            setAdminUser(matched);
-            saveAdminSession(matched);
-          }
-        }
-      }
-      if (usersData) setUsers(usersData);
-      if (reviewsData) setReviews(reviewsData);
-      if (promosData) setPromos(promosData);
-      if (statsData) setStats(statsData);
-    } catch (err) {
-      console.warn('Admin portal background sync error:', err);
-    } finally {
-      setIsRefreshing(false);
+  const syncAdminUserWithAdmins = (adminsList: UserProfile[]) => {
+    if (!adminUser) return;
+    const matched =
+      adminsList.find((a) => a.id === adminUser.id) ||
+      adminsList.find((a) => a.email.toLowerCase() === adminUser.email.toLowerCase());
+    if (matched && (matched.id !== adminUser.id || matched.avatar !== adminUser.avatar)) {
+      setAdminUser(matched);
+      saveAdminSession(matched);
     }
   };
 
-  // Initial fetch when logged in
+  // 4. Fetch Tab-Specific Admin Data (On-Demand & Cached)
+  const loadTabData = async (tab: AdminTab, force = false) => {
+    // If already loaded and not forced to refresh, reuse cached data
+    if (loadedTabs[tab] && !force) {
+      return;
+    }
+
+    setTabLoading((prev) => ({ ...prev, [tab]: true }));
+    if (force) {
+      setIsRefreshing(true);
+    }
+
+    try {
+      switch (tab) {
+        case 'overview': {
+          const needsBookings = force || !loadedTabs.bookings;
+          const needsRooms = force || !loadedTabs.rooms;
+          const needsAdmins = force || !loadedTabs.admins;
+
+          const [statsData, bookingsData, roomsData, adminsData] = await Promise.all([
+            adminApi.getStats().catch(() => ({
+              totalRevenue: 0,
+              totalBookings: 0,
+              confirmedBookings: 0,
+              cancelledBookings: 0,
+              totalRooms: 0,
+              totalUsers: 0,
+              totalAdmins: 0,
+              totalReviews: 0,
+              occupancyRate: 0
+            })),
+            needsBookings ? bookingApi.getAll().catch(() => []) : Promise.resolve(null),
+            needsRooms ? roomApi.getAll().catch(() => []) : Promise.resolve(null),
+            needsAdmins ? adminApi.getAdmins().catch(() => []) : Promise.resolve(null)
+          ]);
+
+          if (statsData) setStats(statsData);
+          if (bookingsData !== null) {
+            setBookings(bookingsData);
+            setLoadedTabs((prev) => ({ ...prev, bookings: true }));
+          }
+          if (roomsData !== null) {
+            setRooms(roomsData);
+            setLoadedTabs((prev) => ({ ...prev, rooms: true }));
+          }
+          if (adminsData !== null) {
+            setAdmins(adminsData);
+            syncAdminUserWithAdmins(adminsData);
+            setLoadedTabs((prev) => ({ ...prev, admins: true }));
+          }
+          setLoadedTabs((prev) => ({ ...prev, overview: true }));
+          break;
+        }
+
+        case 'rooms': {
+          const roomsData = await roomApi.getAll();
+          setRooms(roomsData || []);
+          setLoadedTabs((prev) => ({ ...prev, rooms: true }));
+          break;
+        }
+
+        case 'bookings': {
+          const bookingsData = await bookingApi.getAll();
+          setBookings(bookingsData || []);
+          setLoadedTabs((prev) => ({ ...prev, bookings: true }));
+          break;
+        }
+
+        case 'admins': {
+          const adminsData = await adminApi.getAdmins();
+          setAdmins(adminsData || []);
+          syncAdminUserWithAdmins(adminsData || []);
+          setLoadedTabs((prev) => ({ ...prev, admins: true }));
+          break;
+        }
+
+        case 'guests': {
+          const needsBookings = force || !loadedTabs.bookings;
+          const [usersData, bookingsData] = await Promise.all([
+            adminApi.getAllUsers().catch(() => []),
+            needsBookings ? bookingApi.getAll().catch(() => []) : Promise.resolve(null)
+          ]);
+          setUsers(usersData || []);
+          if (bookingsData !== null) {
+            setBookings(bookingsData);
+            setLoadedTabs((prev) => ({ ...prev, bookings: true }));
+          }
+          setLoadedTabs((prev) => ({ ...prev, guests: true }));
+          break;
+        }
+
+        case 'reviews': {
+          const reviewsData = await reviewApi.getAll();
+          setReviews(reviewsData || []);
+          setLoadedTabs((prev) => ({ ...prev, reviews: true }));
+          break;
+        }
+
+        case 'promos': {
+          const promosData = await promoApi.getAll();
+          setPromos(promosData || []);
+          setLoadedTabs((prev) => ({ ...prev, promos: true }));
+          break;
+        }
+
+        case 'profile': {
+          setLoadedTabs((prev) => ({ ...prev, profile: true }));
+          break;
+        }
+      }
+
+      if (force) {
+        const tabTitles: Record<AdminTab, string> = {
+          overview: 'Overview',
+          rooms: 'Rooms',
+          bookings: 'Bookings',
+          admins: 'Administrators',
+          guests: 'Guests',
+          reviews: 'Reviews',
+          promos: 'Promo codes',
+          profile: 'Profile'
+        };
+        showToast(`${tabTitles[tab]} data refreshed.`);
+      }
+    } catch (err) {
+      console.warn(`Admin portal sync error for tab ${tab}:`, err);
+      if (force) {
+        showToast(`Failed to refresh ${tab} data.`, 'info');
+      }
+    } finally {
+      setTabLoading((prev) => ({ ...prev, [tab]: false }));
+      if (force) {
+        setIsRefreshing(false);
+      }
+    }
+  };
+
+  // Lazy load data for the active tab whenever tab changes or admin logs in
   useEffect(() => {
     if (adminUser?.id) {
-      refreshAllData();
+      loadTabData(currentTab, false);
     }
-  }, [adminUser?.id]);
+  }, [currentTab, adminUser?.id]);
 
   // Real-time validation for Admin Login
   const loginFieldErrors = {
@@ -170,39 +298,39 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
   const handleAddRoom = async (roomData: Partial<Room>) => {
     const created = await roomApi.create(roomData);
     setRooms((prev) => [created, ...prev]);
-    refreshAllData();
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   const handleUpdateRoom = async (id: string, roomData: Partial<Room>) => {
     const updated = await roomApi.update(id, roomData);
     setRooms((prev) => prev.map((r) => (r.id === id ? updated : r)));
-    refreshAllData();
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   const handleDeleteRoom = async (id: string) => {
     await roomApi.delete(id);
     setRooms((prev) => prev.filter((r) => r.id !== id));
-    refreshAllData();
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   // 7. Booking Handlers
   const handleUpdateBookingStatus = async (id: string, status: string) => {
     const updated = await bookingApi.updateStatus(id, status);
     setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
-    refreshAllData();
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   const handleDeleteBooking = async (id: string) => {
     await bookingApi.delete(id);
     setBookings((prev) => prev.filter((b) => b.id !== id));
-    refreshAllData();
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   // 8. Admin & Staff Handlers
   const handleAddAdmin = async (adminData: { fullName: string; email: string; password?: string; role?: string; phone?: string }) => {
     const created = await adminApi.createAdmin(adminData);
     setAdmins((prev) => [...prev, created]);
-    refreshAllData();
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   const handleUpdateAdmin = async (id: string, data: Partial<UserProfile> & { password?: string }) => {
@@ -212,13 +340,13 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
       setAdminUser(updated);
       saveAdminSession(updated);
     }
-    refreshAllData();
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   const handleDeleteAdmin = async (id: string) => {
     await adminApi.deleteAdmin(id);
     setAdmins((prev) => prev.filter((a) => a.id !== id));
-    refreshAllData();
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   // 9. Promo Handlers
@@ -236,6 +364,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
   const handleDeleteReview = async (id: string) => {
     await reviewApi.delete(id);
     setReviews((prev) => prev.filter((r) => r.id !== id));
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   // 11. Admin Own Profile, Avatar & Password Handlers
@@ -447,8 +576,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
           currentTab={currentTab}
           onOpenMobile={() => setMobileSidebarOpen(true)}
           adminUser={adminUser}
-          onRefresh={refreshAllData}
-          isRefreshing={isRefreshing}
+          onRefresh={() => loadTabData(currentTab, true)}
+          isRefreshing={isRefreshing || tabLoading[currentTab]}
           onSelectTab={setCurrentTab}
         />
 
@@ -469,6 +598,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
                 setCurrentTab('admins');
                 setDirectAddAdmin(true);
               }}
+              isLoading={tabLoading.overview}
             />
           )}
 
@@ -479,6 +609,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
               onUpdateRoom={handleUpdateRoom}
               onDeleteRoom={handleDeleteRoom}
               onShowToast={showToast}
+              isLoading={tabLoading.rooms}
             />
           )}
 
@@ -488,6 +619,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
               onUpdateStatus={handleUpdateBookingStatus}
               onDeleteBooking={handleDeleteBooking}
               onShowToast={showToast}
+              isLoading={tabLoading.bookings}
             />
           )}
 
@@ -501,6 +633,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
               onShowToast={showToast}
               openCreateModalDirectly={directAddAdmin}
               onClearOpenModalDirectly={() => setDirectAddAdmin(false)}
+              isLoading={tabLoading.admins}
             />
           )}
 
@@ -508,6 +641,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
             <AdminGuests
               users={users}
               bookings={bookings}
+              isLoading={tabLoading.guests}
             />
           )}
 
@@ -516,6 +650,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
               reviews={reviews}
               onDeleteReview={handleDeleteReview}
               onShowToast={showToast}
+              isLoading={tabLoading.reviews}
             />
           )}
 
@@ -525,6 +660,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
               onAddPromo={handleAddPromo}
               onDeletePromo={handleDeletePromo}
               onShowToast={showToast}
+              isLoading={tabLoading.promos}
             />
           )}
 
