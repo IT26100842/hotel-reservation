@@ -139,12 +139,6 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
           <div className="flex items-center gap-4">
             <span className="text-stone-300">Currency: <strong>LKR (Sri Lankan Rupee)</strong></span>
             <span>·</span>
-            <button
-              onClick={() => onNavigate('admin')}
-              className="text-[#C2A26F] hover:text-white transition-colors cursor-pointer flex items-center gap-1 font-medium"
-            >
-              Staff Portal &rarr;
-            </button>
           </div>
         </div>
       </div>

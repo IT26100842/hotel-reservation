@@ -2,7 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { INITIAL_REVIEWS } from '../data/mockData';
 import { Review, UserProfile } from '../types';
 import { reviewApi } from '../services/api';
-import { Star, Heart, ThumbsUp, MessageSquarePlus, Check, User, X, AlertCircle, BadgeCheck } from 'lucide-react';
+import { 
+  Star, Heart, ThumbsUp, MessageSquarePlus, Check, User, X, 
+  AlertCircle, BadgeCheck, ChevronLeft, ChevronRight 
+} from 'lucide-react';
 import { ScrollReveal, StaggerContainer, StaggerItem } from './ScrollReveal';
 import { getAvatarUrl, NO_DP_AVATAR } from '../utils/avatar';
 import {
@@ -32,7 +35,8 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
   const [reviewsList, setReviewsList] = useState<ReviewWithReactions[]>(() => {
     const likedIds = getLikedReviewIdsFromCookie();
     const heartedIds = getHeartedReviewIdsFromCookie();
-    return INITIAL_REVIEWS.slice(0, 3).map((r) => ({
+    // Load all INITIAL_REVIEWS at first, we will slice them during render
+    return INITIAL_REVIEWS.map((r) => ({
       ...r,
       likes: typeof r.likes === 'number' ? r.likes : 0,
       hearts: typeof r.hearts === 'number' ? r.hearts : 0,
@@ -40,6 +44,9 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
       userReactedHeart: heartedIds.includes(String(r.id)),
     }));
   });
+
+  // Carousel State
+  const [currentIndex, setCurrentIndex] = useState(0);
 
   // Load reviews from MySQL backend API on mount
   useEffect(() => {
@@ -66,6 +73,14 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
     });
   }, []);
 
+  useEffect(() => {
+    if (reviewsList.length <= 3) return;
+    const timer = setInterval(() => {
+      setCurrentIndex((prev) => (prev + 1) % reviewsList.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [reviewsList.length]);
+
   // Review Form States
   const [showForm, setShowForm] = useState(false);
   const [guestName, setGuestName] = useState('');
@@ -82,14 +97,12 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
     if (!target) return;
     const reacted = !target.userReactedLike;
 
-    // Persist in browser cookie
     const currentLiked = getLikedReviewIdsFromCookie();
     const updatedLiked = reacted
       ? Array.from(new Set([...currentLiked, id]))
       : currentLiked.filter((item) => item !== id);
     saveLikedReviewIdsToCookie(updatedLiked);
 
-    // Optimistic UI update
     setReviewsList((prev) =>
       prev.map((r) =>
         r.id === id
@@ -102,7 +115,6 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
       )
     );
 
-    // Save to database and sync count
     const updatedFromDb = await reviewApi.toggleLike(id, reacted);
     if (updatedFromDb) {
       setReviewsList((prev) =>
@@ -124,14 +136,12 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
     if (!target) return;
     const reacted = !target.userReactedHeart;
 
-    // Persist in browser cookie
     const currentHearted = getHeartedReviewIdsFromCookie();
     const updatedHearted = reacted
       ? Array.from(new Set([...currentHearted, id]))
       : currentHearted.filter((item) => item !== id);
     saveHeartedReviewIdsToCookie(updatedHearted);
 
-    // Optimistic UI update
     setReviewsList((prev) =>
       prev.map((r) =>
         r.id === id
@@ -144,7 +154,6 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
       )
     );
 
-    // Save to database and sync count
     const updatedFromDb = await reviewApi.toggleHeart(id, reacted);
     if (updatedFromDb) {
       setReviewsList((prev) =>
@@ -161,12 +170,10 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
     }
   };
 
-  // Submit Feedback
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
 
-    // Auto-detect name if logged in, otherwise validate typed input
     const finalName = user?.fullName ? user.fullName.trim() : guestName.trim();
     if (!user) {
       const nameErr = validateFullName(finalName);
@@ -203,6 +210,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
       };
 
       setReviewsList((prev) => [newReview, ...prev]);
+      setCurrentIndex(0);
     } catch {
       const fallbackId = 'rev-' + Date.now();
       const updatedMyReviews = addMyReviewIdToCookie(fallbackId);
@@ -223,6 +231,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
         userReactedHeart: false,
       };
       setReviewsList((prev) => [newReview, ...prev]);
+      setCurrentIndex(0); 
     }
 
     setComment('');
@@ -234,9 +243,22 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
     }, 2000);
   };
 
+  const handlePrev = () => {
+    setCurrentIndex((prev) => (prev - 1 + reviewsList.length) % reviewsList.length);
+  };
+  const handleNext = () => {
+    setCurrentIndex((prev) => (prev + 1) % reviewsList.length);
+  };
+
+  const visibleReviews = [];
+  if (reviewsList.length > 0) {
+    for (let i = 0; i < Math.min(3, reviewsList.length); i++) {
+      visibleReviews.push(reviewsList[(currentIndex + i) % reviewsList.length]);
+    }
+  }
+
   return (
     <section id="reviews-section" className="py-12 pb-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto overflow-hidden">
-      {/* Section Title matching screenshot + Action button */}
       <ScrollReveal animation="fade-up" className="flex flex-col sm:flex-row sm:items-end justify-between mb-8 gap-4">
         <div>
           <h2 className="font-serif text-3xl sm:text-4xl text-[#1A1F1D] dark:text-[#F5F5F0] tracking-tight font-medium">
@@ -256,7 +278,6 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
         </button>
       </ScrollReveal>
 
-      {/* Write a Review Modal / Collapsible Form */}
       {showForm && (
         <div className="mb-10 bg-white dark:bg-[#101C18] rounded-3xl p-6 sm:p-8 border border-stone-200 dark:border-[#1F332C] shadow-lg animate-in fade-in slide-in-from-top-3">
           <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-[#1F332C] mb-6">
@@ -297,7 +318,6 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                 </div>
               )}
 
-              {/* User Identity: Auto-fill if logged in, else text input */}
               {user ? (
                 <div className="flex items-center gap-3 p-3 bg-[#0D4739]/5 dark:bg-[#0D4739]/20 rounded-2xl border border-[#0D4739]/15 dark:border-[#0D4739]/30">
                   <img
@@ -339,7 +359,6 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                 </div>
               )}
 
-              {/* Star Rating Selector */}
               <div>
                 <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1.5">
                   Your Rating
@@ -369,7 +388,6 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                 </div>
               </div>
 
-              {/* Room or Stay Type */}
               <div>
                 <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1.5">
                   Room or Stay Experience
@@ -387,7 +405,6 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                 </select>
               </div>
 
-              {/* Review Text Area */}
               <div>
                 <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 uppercase tracking-wider mb-1.5">
                   Your Review / Feedback
@@ -425,12 +442,12 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
         </div>
       )}
 
-      {/* Testimonial Cards with Staggered Scroll Animation */}
       <StaggerContainer
+        key={`${currentIndex}-${reviewsList.length}`}
         staggerDelay={0.16}
-        className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8"
+        className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 min-h-[300px]"
       >
-        {reviewsList.map((rev) => {
+        {visibleReviews.map((rev) => {
           const isMyReview = myReviewIds.includes(String(rev.id));
           return (
           <StaggerItem key={rev.id} animation="fade-up">
@@ -451,7 +468,6 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                   </div>
                 )}
 
-                {/* Top Row: Avatar & Stars */}
                 <div className="flex items-start gap-4 mb-4">
                   <div className="shrink-0">
                     <img
@@ -465,14 +481,12 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    {/* 5 Stars */}
                     <div className="flex items-center gap-1 mb-1">
                       {[...Array(rev.rating)].map((_, i) => (
                         <Star key={i} className="w-4 h-4 fill-[#E68A00] text-[#E68A00]" />
                       ))}
                     </div>
 
-                    {/* Guest Name ONLY (Address removed as requested!) */}
                     <p className="text-sm font-semibold text-[#1A1F1D] dark:text-[#F5F5F0] truncate">
                       {rev.guestName}
                     </p>
@@ -482,20 +496,17 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                   </div>
                 </div>
 
-                {/* Quote */}
                 <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed italic mb-4">
                   {rev.comment}
                 </p>
               </div>
 
-              {/* Bottom Reactions Bar (Hearts & Helpful Likes) */}
               <div className="pt-3 border-t border-stone-100 dark:border-[#1F332C] flex items-center justify-between">
                 <span className="text-[11px] text-stone-400 dark:text-stone-500">
                   Was this review helpful?
                 </span>
 
                 <div className="flex items-center gap-2">
-                  {/* Heart Reaction */}
                   <button
                     type="button"
                     onClick={() => handleToggleHeart(rev.id)}
@@ -514,7 +525,6 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                     <span className="tabular-nums">{rev.hearts}</span>
                   </button>
 
-                  {/* Thumbs Up Reaction */}
                   <button
                     type="button"
                     onClick={() => handleToggleLike(rev.id)}
@@ -539,7 +549,25 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
           );
         })}
       </StaggerContainer>
+
+      {reviewsList.length > 3 && (
+        <div className="flex justify-center items-center gap-4 mt-8">
+          <button
+            onClick={handlePrev}
+            className="p-3 rounded-full bg-stone-100 dark:bg-[#172A24] hover:bg-stone-200 dark:hover:bg-[#1F3830] text-stone-700 dark:text-stone-300 transition-all cursor-pointer shadow-sm hover:shadow-md"
+            aria-label="Previous Reviews"
+          >
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <button
+            onClick={handleNext}
+            className="p-3 rounded-full bg-stone-100 dark:bg-[#172A24] hover:bg-stone-200 dark:hover:bg-[#1F3830] text-stone-700 dark:text-stone-300 transition-all cursor-pointer shadow-sm hover:shadow-md"
+            aria-label="Next Reviews"
+          >
+            <ChevronRight className="w-5 h-5" />
+          </button>
+        </div>
+      )}
     </section>
   );
 };
-
