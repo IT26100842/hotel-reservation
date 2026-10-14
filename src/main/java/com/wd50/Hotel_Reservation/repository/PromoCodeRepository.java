@@ -1,6 +1,6 @@
-package com.wd32.Hotel_Reservation.repository;
+package com.wd50.Hotel_Reservation.repository;
 
-import com.wd32.Hotel_Reservation.model.PromoCode;
+import com.wd50.Hotel_Reservation.model.PromoCode;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

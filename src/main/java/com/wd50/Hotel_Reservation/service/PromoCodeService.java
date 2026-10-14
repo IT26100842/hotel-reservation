@@ -1,7 +1,7 @@
-package com.wd32.Hotel_Reservation.service;
+package com.wd50.Hotel_Reservation.service;
 
-import com.wd32.Hotel_Reservation.model.PromoCode;
-import com.wd32.Hotel_Reservation.repository.PromoCodeRepository;
+import com.wd50.Hotel_Reservation.model.PromoCode;
+import com.wd50.Hotel_Reservation.repository.PromoCodeRepository;
 import org.springframework.stereotype.Service;
 import java.util.HashMap;
 import java.util.Map;

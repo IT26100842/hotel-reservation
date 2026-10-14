@@ -1,4 +1,4 @@
-package com.wd32.Hotel_Reservation.model;
+package com.wd50.Hotel_Reservation.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.Column;
