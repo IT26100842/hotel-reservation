@@ -1,4 +1,4 @@
-package com.wd32.Hotel_Reservation.controller;
+package com.wd50.Hotel_Reservation.controller;
 
 import com.wd32.Hotel_Reservation.dto.PromoValidateRequest;
 import com.wd32.Hotel_Reservation.model.PromoCode;
