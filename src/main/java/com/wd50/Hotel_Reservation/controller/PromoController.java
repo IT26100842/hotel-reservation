@@ -1,8 +1,8 @@
 package com.wd50.Hotel_Reservation.controller;
 
-import com.wd32.Hotel_Reservation.dto.PromoValidateRequest;
-import com.wd32.Hotel_Reservation.model.PromoCode;
-import com.wd32.Hotel_Reservation.service.PromoCodeService;
+import com.wd50.Hotel_Reservation.dto.PromoValidateRequest;
+import com.wd50.Hotel_Reservation.model.PromoCode;
+import com.wd50.Hotel_Reservation.service.PromoCodeService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;

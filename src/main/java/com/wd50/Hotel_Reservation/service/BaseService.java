@@ -1,6 +1,6 @@
 package com.wd50.Hotel_Reservation.service;
 
-import com.wd32.Hotel_Reservation.model.BaseEntity;
+import com.wd50.Hotel_Reservation.model.BaseEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 import java.util.Optional;
