@@ -15,7 +15,8 @@ import {
   AlertCircle,
   Eye,
   SlidersHorizontal,
-  Wrench
+  Wrench,
+  Loader2
 } from 'lucide-react';
 
 interface AdminRoomsProps {
@@ -24,6 +25,7 @@ interface AdminRoomsProps {
   onUpdateRoom: (id: string, room: Partial<Room>) => Promise<void>;
   onDeleteRoom: (id: string) => Promise<void>;
   onShowToast: (msg: string, type?: 'success' | 'info') => void;
+  isLoading?: boolean;
 }
 
 export const AdminRooms: React.FC<AdminRoomsProps> = ({
@@ -31,7 +33,8 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
   onAddRoom,
   onUpdateRoom,
   onDeleteRoom,
-  onShowToast
+  onShowToast,
+  isLoading = false
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | RoomType>('all');
@@ -363,8 +366,24 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
         </button>
       </div>
 
-      {/* 2. Room Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+      {/* 2. Room Grid / Loading / Empty */}
+      {isLoading ? (
+        <div className="p-16 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex flex-col items-center justify-center text-center">
+          <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin mb-3" />
+          <h4 className="font-serif text-base font-bold text-stone-900 dark:text-stone-100">
+            Loading Accommodations...
+          </h4>
+          <p className="text-xs text-stone-400 mt-1">
+            Fetching hotel room categories and availability from database
+          </p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="p-16 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex flex-col items-center justify-center text-center">
+          <p className="text-sm font-semibold text-stone-700 dark:text-stone-300">No rooms found</p>
+          <p className="text-xs text-stone-400 mt-1">Try modifying your search or click &quot;Add New Room&quot;</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
         {filtered.map((room) => (
           <div
             key={room.id}
@@ -526,6 +545,7 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
           </div>
         ))}
       </div>
+      )}
 
       {/* 3. Add / Edit Room Modal */}
       {modalOpen && (

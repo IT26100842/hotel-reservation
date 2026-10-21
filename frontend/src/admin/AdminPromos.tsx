@@ -1,19 +1,21 @@
 import React, { useState } from 'react';
 import { PromoCodeItem } from '../types';
-import { Plus, Trash2, CheckCircle2, X, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, CheckCircle2, X, AlertCircle, Loader2 } from 'lucide-react';
 
 interface AdminPromosProps {
   promos: PromoCodeItem[];
   onAddPromo: (promo: Partial<PromoCodeItem>) => Promise<void>;
   onDeletePromo: (id: number | string) => Promise<void>;
   onShowToast: (msg: string, type?: 'success' | 'info') => void;
+  isLoading?: boolean;
 }
 
 export const AdminPromos: React.FC<AdminPromosProps> = ({
   promos,
   onAddPromo,
   onDeletePromo,
-  onShowToast
+  onShowToast,
+  isLoading = false
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -147,8 +149,24 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
         </button>
       </div>
 
-      {/* Promos Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+      {/* Promos Cards Grid / Loading / Empty */}
+      {isLoading ? (
+        <div className="p-16 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex flex-col items-center justify-center text-center">
+          <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin mb-3" />
+          <h4 className="font-serif text-base font-bold text-stone-900 dark:text-stone-100">
+            Loading Promo Codes...
+          </h4>
+          <p className="text-xs text-stone-400 mt-1">
+            Fetching active discount coupons and promotions from database
+          </p>
+        </div>
+      ) : promos.length === 0 ? (
+        <div className="p-16 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex flex-col items-center justify-center text-center">
+          <p className="text-sm font-semibold text-stone-700 dark:text-stone-300">No promo codes found</p>
+          <p className="text-xs text-stone-400 mt-1">Click &quot;New Promo Code&quot; to configure a promotion</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {promos.map((p) => (
           <div
             key={p.code}
@@ -192,6 +210,7 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
           </div>
         ))}
       </div>
+      )}
 
       {/* Create Promo Modal */}
       {modalOpen && (

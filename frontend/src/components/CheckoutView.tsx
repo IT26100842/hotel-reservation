@@ -585,9 +585,11 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
                 </span>
                 Payment Method & Gateway
               </h2>
+              {/*
               <span className="text-xs text-emerald-700 dark:text-emerald-400 flex items-center gap-1 font-medium">
                 <Lock className="w-3.5 h-3.5" /> 256-bit SSL Encrypted
               </span>
+              */}
             </div>
 
             {!isStep2Unlocked && (

@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
 import { Booking, UserProfile } from '../types';
-import { Users, Search, Mail, Phone, MapPin, Calendar, DollarSign, BedDouble } from 'lucide-react';
+import { Users, Search, Mail, Phone, MapPin, Calendar, DollarSign, BedDouble, Loader2 } from 'lucide-react';
 import { getAvatarUrl, NO_DP_AVATAR } from '../utils/avatar';
 
 interface AdminGuestsProps {
   users: UserProfile[];
   bookings: Booking[];
+  isLoading?: boolean;
 }
 
-export const AdminGuests: React.FC<AdminGuestsProps> = ({ users, bookings }) => {
+export const AdminGuests: React.FC<AdminGuestsProps> = ({ users, bookings, isLoading = false }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
   // Extract all unique guests from users list + bookings guestInfo
@@ -97,7 +98,24 @@ export const AdminGuests: React.FC<AdminGuestsProps> = ({ users, bookings }) => 
 
       {/* Guest Table */}
       <div className="p-6 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
+        {isLoading ? (
+          <div className="py-16 text-center text-stone-500 flex flex-col items-center justify-center">
+            <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin mb-3" />
+            <h4 className="font-serif text-base font-bold text-stone-900 dark:text-stone-100">
+              Loading Guest Directory...
+            </h4>
+            <p className="text-xs text-stone-400 mt-1">
+              Retrieving registered customers and booking histories
+            </p>
+          </div>
+        ) : guestList.length === 0 ? (
+          <div className="py-12 text-center text-stone-500">
+            <Users className="w-10 h-10 mx-auto text-stone-300 dark:text-stone-600 mb-2" />
+            <p className="text-sm font-semibold">No guests found</p>
+            <p className="text-xs text-stone-400 mt-1">Try adjusting your search criteria</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-stone-200 dark:border-[#1C2F29] text-stone-500 dark:text-stone-400 uppercase text-[10px] font-semibold">
@@ -166,6 +184,7 @@ export const AdminGuests: React.FC<AdminGuestsProps> = ({ users, bookings }) => 
             </tbody>
           </table>
         </div>
+        )}
       </div>
     </div>
   );
