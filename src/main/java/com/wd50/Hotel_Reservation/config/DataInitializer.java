@@ -1,15 +1,15 @@
-package com.wd32.Hotel_Reservation.config;
+package com.wd50.Hotel_Reservation.config;
 
-import com.wd32.Hotel_Reservation.model.Booking;
-import com.wd32.Hotel_Reservation.model.PromoCode;
-import com.wd32.Hotel_Reservation.model.Review;
-import com.wd32.Hotel_Reservation.model.Room;
-import com.wd32.Hotel_Reservation.model.User;
-import com.wd32.Hotel_Reservation.repository.BookingRepository;
-import com.wd32.Hotel_Reservation.repository.PromoCodeRepository;
-import com.wd32.Hotel_Reservation.repository.ReviewRepository;
-import com.wd32.Hotel_Reservation.repository.RoomRepository;
-import com.wd32.Hotel_Reservation.repository.UserRepository;
+import com.wd50.Hotel_Reservation.model.Booking;
+import com.wd50.Hotel_Reservation.model.PromoCode;
+import com.wd50.Hotel_Reservation.model.Review;
+import com.wd50.Hotel_Reservation.model.Room;
+import com.wd50.Hotel_Reservation.model.User;
+import com.wd50.Hotel_Reservation.repository.BookingRepository;
+import com.wd50.Hotel_Reservation.repository.PromoCodeRepository;
+import com.wd50.Hotel_Reservation.repository.ReviewRepository;
+import com.wd50.Hotel_Reservation.repository.RoomRepository;
+import com.wd50.Hotel_Reservation.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 import java.util.Arrays;
