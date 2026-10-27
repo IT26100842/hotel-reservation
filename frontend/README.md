@@ -1,20 +1,45 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# 🏨 Hotel Room Reservation System — Frontend
 
-# Run and deploy your AI Studio app
+A modern, fast, and responsive frontend interface for the Hotel Room Reservation System.
 
-This contains everything you need to run your app locally.
+---
 
-View your app in AI Studio: https://ai.studio/apps/87798e51-edab-4c3d-a0d9-9fe782bac742
+## ⚡ Quick Start
 
-## Run Locally
+### 1. Prerequisites (Node.js)
+Make sure you have Node.js installed:
+```bash
+node -v
+npm -v
+```
+If not installed, download the LTS version from [nodejs.org](https://nodejs.org/).
 
-**Prerequisites:**  Node.js
+---
 
+### 2. Run Locally for Development
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+Navigate to the frontend folder and start the dev server:
+
+```bash
+# 1. Go to frontend directory
+cd frontend
+
+# 2. Install dependencies (first time only)
+npm install
+
+# 3. Start development server
+npm run dev
+```
+Open the local URL displayed in the terminal (e.g., `http://localhost:3000`) to view and edit live changes.
+
+---
+
+### 3. Production Build (Auto-sync to Backend)
+
+When you are ready to prepare the frontend for production, run:
+
+```bash
+npm run build
+```
+
+> **Note:** Running `npm run build` will automatically compile and transfer the production HTML and static assets directly into the backend resources directory (`src/main/resources/static/`). Once built, running the Spring Boot backend will serve the frontend automatically.
