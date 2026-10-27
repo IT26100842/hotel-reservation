@@ -1,0 +1,10 @@
+${AnsiColor.BRIGHT_CYAN}
+  ███████╗███████╗██████╗ ███████╗███╗   ██╗███████╗    ███████╗████████╗ █████╗ ██╗   ██╗
+  ██╔════╝██╔════╝██╔══██╗██╔════╝████╗  ██║██╔════╝    ██╔════╝╚══██╔══╝██╔══██╗╚██╗ ██╔╝
+  ███████╗█████╗  ██████╔╝█████╗  ██╔██╗ ██║█████╗      ███████╗   ██║   ███████║ ╚████╔╝ 
+  ╚════██║██╔══╝  ██╔══██╗██╔══╝  ██║╚██╗██║██╔══╝      ╚════██║   ██║   ██╔══██║  ╚██╔╝  
+  ███████║███████╗██║  ██║███████╗██║ ╚████║███████╗    ███████║   ██║   ██║  ██║   ██║   
+  ╚══════╝╚══════╝╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚══════╝    ╚══════╝   ╚═╝   ╚═╝  ╚═╝   ╚═╝   
+${AnsiColor.BRIGHT_YELLOW}  :: Serene Stay Hotel Reservation System ::              ${AnsiColor.BRIGHT_GREEN}(v${application.version:1.0.0})
+${AnsiColor.BRIGHT_BLACK}  Running on Spring Boot ${spring-boot.version} | Active Profile: ${spring.profiles.active:default}
+${AnsiColor.DEFAULT}
