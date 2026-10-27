@@ -4,6 +4,9 @@ import { RoomType, SearchFilters } from '../types';
 import { ImageWithFallback } from './ImageWithFallback';
 import { ScrollReveal } from './ScrollReveal';
 import Hero_back_image from '../assets/images/hero_back_image.avif';
+import Hero_back_animation_webm from '../assets/images/animation.webm';
+import Hero_back_animation_mp4 from '../assets/images/animation.mp4';
+import Candle from './Candle';
 
 interface HeroSectionProps {
   onSearch: (filters: Partial<SearchFilters>) => void;
@@ -122,22 +125,50 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
     suite: 'Presidential Suite',
     villa: 'Coconut Grove Villa'
   };
+  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
 
   return (
     <section className="relative w-full pb-8 md:pb-14">
       {/* 1. Full Width Edge-to-Edge Hero Image Visual Banner (Matches Screenshot web.webp) */}
       <div className="relative w-full h-[440px] sm:h-[490px] md:h-[540px] lg:h-[580px] overflow-hidden bg-stone-900">
         {/* Background Image: Luxury open-air tropical bedroom overlooking ocean */}
-        <div className="absolute inset-0 z-0">
-          <ImageWithFallback
-            src={Hero_back_image}
-            alt="Serene Stay tropical luxury bedroom with ocean view"
-            containerClassName="w-full h-full"
-            className="w-full h-full object-cover object-center"
-          />
-          {/* Subtle gradient scrim for typography contrast */}
-          <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/35 to-black/10 md:from-black/60 md:via-black/25 md:to-transparent" />
-        </div>
+        <div className="absolute inset-0 z-0 bg-brand-dark">
+  
+  {/* Background Image (Shows while video is loading) */}
+  <div 
+    className={`absolute inset-0 transition-opacity duration-1000 ease-in-out ${
+      isVideoLoaded ? 'opacity-0' : 'opacity-100'
+    }`}
+  >
+    <ImageWithFallback
+      src={Hero_back_image}
+      alt="Serene Stay tropical luxury bedroom with ocean view"
+      containerClassName="w-full h-full"
+      className="w-full h-full object-cover object-center"
+    />
+  </div>
+
+  {/* Optimized WebM/MP4 Animation */}
+  <video
+    autoPlay
+    loop
+    muted
+    playsInline
+    onLoadedData={() => setIsVideoLoaded(true)}
+    className={`absolute inset-0 w-full h-full object-cover object-center pointer-events-none transition-opacity duration-1000 ease-in-out ${
+      isVideoLoaded ? 'opacity-100' : 'opacity-0'
+    }`}
+  >
+    <source src={Hero_back_animation_webm} type="video/webm" />
+    <source src={Hero_back_animation_mp4} type="video/mp4" />
+  </video>
+  
+  {/* Candle Animation */}
+  <Candle/> 
+
+  {/* Subtle gradient scrim for typography contrast */}
+  <div className="absolute inset-0 bg-gradient-to-r from-black/65 via-black/35 to-black/10 md:from-black/60 md:via-black/25 md:to-transparent pointer-events-none" />
+</div>
 
         {/* Hero Copy (Top Left) */}
         <ScrollReveal
