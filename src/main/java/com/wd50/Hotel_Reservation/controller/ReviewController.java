@@ -1,8 +1,8 @@
 package com.wd50.Hotel_Reservation.controller;
 
-import com.wd32.Hotel_Reservation.dto.ReviewRequest;
-import com.wd32.Hotel_Reservation.model.Review;
-import com.wd32.Hotel_Reservation.service.ReviewService;
+import com.wd50.Hotel_Reservation.dto.ReviewRequest;
+import com.wd50.Hotel_Reservation.model.Review;
+import com.wd50.Hotel_Reservation.service.ReviewService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
