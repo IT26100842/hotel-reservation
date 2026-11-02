@@ -1,4 +1,4 @@
-package com.wd32.Hotel_Reservation.model;
+package com.wd50.Hotel_Reservation.model;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
