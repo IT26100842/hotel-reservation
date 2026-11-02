@@ -1,10 +1,10 @@
 package com.wd50.Hotel_Reservation.controller;
 
-import com.wd32.Hotel_Reservation.dto.BookingRequest;
-import com.wd32.Hotel_Reservation.dto.CancelBookingRequest;
-import com.wd32.Hotel_Reservation.dto.RateBookingRequest;
-import com.wd32.Hotel_Reservation.model.Booking;
-import com.wd32.Hotel_Reservation.service.BookingService;
+import com.wd50.Hotel_Reservation.dto.BookingRequest;
+import com.wd50.Hotel_Reservation.dto.CancelBookingRequest;
+import com.wd50.Hotel_Reservation.dto.RateBookingRequest;
+import com.wd50.Hotel_Reservation.model.Booking;
+import com.wd50.Hotel_Reservation.service.BookingService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
