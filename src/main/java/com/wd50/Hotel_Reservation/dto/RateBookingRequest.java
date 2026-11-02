@@ -1,4 +1,4 @@
-package com.wd32.Hotel_Reservation.dto;
+package com.wd50.Hotel_Reservation.dto;
 
 public class RateBookingRequest {
     private Integer rating;
