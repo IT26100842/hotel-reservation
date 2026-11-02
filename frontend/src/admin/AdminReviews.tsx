@@ -1,18 +1,20 @@
 import React, { useState } from 'react';
 import { Review } from '../types';
-import { Star, Trash2, Search, CheckCircle2 } from 'lucide-react';
+import { Star, Trash2, Search, CheckCircle2, Loader2 } from 'lucide-react';
 import { getAvatarUrl, NO_DP_AVATAR } from '../utils/avatar';
 
 interface AdminReviewsProps {
   reviews: Review[];
   onDeleteReview: (id: string) => Promise<void>;
   onShowToast: (msg: string, type?: 'success' | 'info') => void;
+  isLoading?: boolean;
 }
 
 export const AdminReviews: React.FC<AdminReviewsProps> = ({
   reviews,
   onDeleteReview,
-  onShowToast
+  onShowToast,
+  isLoading = false
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -62,8 +64,25 @@ export const AdminReviews: React.FC<AdminReviewsProps> = ({
         </div>
       </div>
 
-      {/* Reviews Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* Reviews Grid / Loading / Empty */}
+      {isLoading ? (
+        <div className="p-16 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex flex-col items-center justify-center text-center">
+          <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin mb-3" />
+          <h4 className="font-serif text-base font-bold text-stone-900 dark:text-stone-100">
+            Loading Guest Reviews...
+          </h4>
+          <p className="text-xs text-stone-400 mt-1">
+            Retrieving verified guest feedback and ratings from database
+          </p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="p-16 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex flex-col items-center justify-center text-center">
+          <Star className="w-8 h-8 text-stone-300 dark:text-stone-600 mb-2" />
+          <p className="text-sm font-semibold text-stone-700 dark:text-stone-300">No reviews found</p>
+          <p className="text-xs text-stone-400 mt-1">Guest reviews will appear here once submitted</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {filtered.map((rev) => (
           <div
             key={rev.id}
@@ -129,6 +148,7 @@ export const AdminReviews: React.FC<AdminReviewsProps> = ({
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 };

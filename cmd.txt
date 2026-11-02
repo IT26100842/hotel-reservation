@@ -3,7 +3,5 @@
 dataBase login : \connect yt6ep6kbryrcxm8u:wlebldixjqsbw7vp@tviw6wn55xwxejwj.cbetxkdyhwsb.us-east-1.rds.amazonaws.com:3306/hyiyfcsmqzamq5eo
 
 Official Head Administrator
-admin@serenestay.com · admin123
-
 userName : admin@serenestay.com
 pw : admin123

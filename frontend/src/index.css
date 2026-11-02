@@ -66,3 +66,6 @@
   background: #C2A26F;
 }
 
+.mainClass *{
+  cursor: none;
+}

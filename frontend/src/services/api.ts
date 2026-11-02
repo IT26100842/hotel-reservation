@@ -41,13 +41,13 @@ export const roomApi = {
       const query = params.toString() ? `?${params.toString()}` : '';
       const data = await apiFetch<any[]>(`/rooms${query}`);
 
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         return data.map(normalizeRoom);
       }
-      return INITIAL_ROOMS;
+      return [];
     } catch (err) {
-      console.warn('API /rooms fetch failed, using fallback data:', err);
-      return INITIAL_ROOMS;
+      console.warn('API /rooms fetch failed:', err);
+      return [];
     }
   },
 
@@ -219,13 +219,13 @@ export const bookingApi = {
   async getAll(): Promise<Booking[]> {
     try {
       const data = await apiFetch<any[]>('/bookings');
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         return data.map(normalizeBooking);
       }
-      return INITIAL_BOOKINGS;
+      return [];
     } catch (err) {
       console.warn('API /bookings getAll failed:', err);
-      return INITIAL_BOOKINGS;
+      return [];
     }
   },
 
@@ -359,7 +359,7 @@ export const reviewApi = {
   async getAll(): Promise<Review[]> {
     try {
       const data = await apiFetch<any[]>('/reviews');
-      if (Array.isArray(data) && data.length > 0) {
+      if (Array.isArray(data)) {
         return data.map((r) => ({
           id: String(r.id),
           guestName: r.guestName,
@@ -373,10 +373,10 @@ export const reviewApi = {
           hearts: typeof r.hearts === 'number' ? r.hearts : 0
         }));
       }
-      return INITIAL_REVIEWS;
+      return [];
     } catch (err) {
-      console.warn('API /reviews failed, using fallback:', err);
-      return INITIAL_REVIEWS;
+      console.warn('API /reviews failed:', err);
+      return [];
     }
   },
 
@@ -490,14 +490,11 @@ export const reviewApi = {
 export const promoApi = {
   async getAll(): Promise<any[]> {
     try {
-      return await apiFetch<any[]>('/promos');
+      const data = await apiFetch<any[]>('/promos');
+      return Array.isArray(data) ? data : [];
     } catch (err) {
-      console.warn('API /promos failed, returning mock promos:', err);
-      return [
-        { id: 1, code: 'SERENE10', description: '10% Discount on any coastal room booking', discountType: 'percentage', discountValue: 10, minSpend: 10000, isActive: true },
-        { id: 2, code: 'WELCOME15', description: '15% Special Welcome Discount', discountType: 'percentage', discountValue: 15, minSpend: 15000, isActive: true },
-        { id: 3, code: 'CEYLON20', description: '20% Exclusive Villa & Suite Discount', discountType: 'percentage', discountValue: 20, minSpend: 25000, isActive: true }
-      ];
+      console.warn('API /promos failed:', err);
+      return [];
     }
   },
 
@@ -548,17 +545,17 @@ export const adminApi = {
     try {
       return await apiFetch<any>('/admin/stats');
     } catch (err) {
-      console.warn('API /admin/stats failed, computing local stats:', err);
+      console.warn('API /admin/stats failed:', err);
       return {
-        totalRevenue: 284500,
-        totalBookings: 6,
-        confirmedBookings: 5,
-        cancelledBookings: 1,
-        totalRooms: 6,
-        totalUsers: 8,
-        totalAdmins: 2,
-        totalReviews: 4,
-        occupancyRate: 85
+        totalRevenue: 0,
+        totalBookings: 0,
+        confirmedBookings: 0,
+        cancelledBookings: 0,
+        totalRooms: 0,
+        totalUsers: 0,
+        totalAdmins: 0,
+        totalReviews: 0,
+        occupancyRate: 0
       };
     }
   },
@@ -566,64 +563,20 @@ export const adminApi = {
   async getAllUsers(): Promise<UserProfile[]> {
     try {
       const data = await apiFetch<any[]>('/admin/users');
-      return data.map(normalizeUser);
+      return Array.isArray(data) ? data.map(normalizeUser) : [];
     } catch (err) {
       console.warn('API /admin/users failed:', err);
-      return [
-        {
-          id: 'usr-1',
-          fullName: 'Serene Stay Head Admin',
-          email: 'admin@serenestay.com',
-          phone: '+94 77 999 8888',
-          city: 'Bentota',
-          country: 'Sri Lanka',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-          preferredCurrency: 'LKR',
-          memberSince: 'January 2024',
-          savedRoomIds: [],
-          role: 'super_admin',
-          status: 'active'
-        },
-        {
-          id: 'usr-2',
-          fullName: 'Thilina Kavishan',
-          email: 'thilinakavishan42@gmail.com',
-          phone: '+94 77 123 4567',
-          city: 'Colombo',
-          country: 'Sri Lanka',
-          avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80',
-          preferredCurrency: 'LKR',
-          memberSince: 'January 2025',
-          savedRoomIds: ['room-2', 'room-3'],
-          role: 'guest',
-          status: 'active'
-        }
-      ];
+      return [];
     }
   },
 
   async getAdmins(): Promise<UserProfile[]> {
     try {
       const data = await apiFetch<any[]>('/admin/admins');
-      return data.map(normalizeUser);
+      return Array.isArray(data) ? data.map(normalizeUser) : [];
     } catch (err) {
       console.warn('API /admin/admins failed:', err);
-      return [
-        {
-          id: 'usr-1',
-          fullName: 'Serene Stay Head Admin',
-          email: 'admin@serenestay.com',
-          phone: '+94 77 999 8888',
-          city: 'Bentota',
-          country: 'Sri Lanka',
-          avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-          preferredCurrency: 'LKR',
-          memberSince: 'January 2024',
-          savedRoomIds: [],
-          role: 'super_admin',
-          status: 'active'
-        }
-      ];
+      return [];
     }
   },
 
