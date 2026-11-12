@@ -7,6 +7,7 @@ import com.wd50.Hotel_Reservation.service.BookingService;
 import com.wd50.Hotel_Reservation.service.ReviewService;
 import com.wd50.Hotel_Reservation.service.RoomService;
 import com.wd50.Hotel_Reservation.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -92,23 +93,59 @@ public class AdminController extends BaseController {
         return ResponseEntity.ok(userService.getAll());
     }
 
+    @PutMapping("/users/{id}")
+    public ResponseEntity<?> updateGuest(@PathVariable Long id, @RequestBody Map<String, String> body, HttpServletRequest request) {
+        String role = resolveCallerRole(request, userService);
+        if ("admin".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied: Standard Administrators have view-only access to guest accounts."));
+        }
+        return ResponseEntity.ok(userService.updateGuest(id, body));
+    }
+
+    @DeleteMapping("/users/{id}")
+    public ResponseEntity<?> deleteGuest(@PathVariable Long id, HttpServletRequest request) {
+        String role = resolveCallerRole(request, userService);
+        if ("admin".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied: Standard Administrators are not authorized to delete guest accounts."));
+        }
+        userService.deleteGuest(id);
+        return ResponseEntity.ok(Map.of("message", "Guest account removed successfully", "id", id));
+    }
+
     @GetMapping("/admins")
     public ResponseEntity<List<User>> getAllAdmins() {
         return ResponseEntity.ok(userService.getAdmins());
     }
 
     @PostMapping("/admins")
-    public ResponseEntity<User> createAdmin(@RequestBody Map<String, String> body) {
+    public ResponseEntity<?> createAdmin(@RequestBody Map<String, String> body, HttpServletRequest request) {
+        String role = resolveCallerRole(request, userService);
+        if (!"super_admin".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied: Only Super Administrators have permission to add new administrators and staff."));
+        }
         return ResponseEntity.status(HttpStatus.CREATED).body(userService.createAdmin(body));
     }
 
     @PutMapping("/admins/{id}")
-    public ResponseEntity<User> updateAdmin(@PathVariable Long id, @RequestBody Map<String, String> body) {
+    public ResponseEntity<?> updateAdmin(@PathVariable Long id, @RequestBody Map<String, String> body, HttpServletRequest request) {
+        String role = resolveCallerRole(request, userService);
+        if (!"super_admin".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied: Only Super Administrators have permission to update administrator accounts."));
+        }
         return ResponseEntity.ok(userService.updateAdmin(id, body));
     }
 
     @DeleteMapping("/admins/{id}")
-    public ResponseEntity<Map<String, Object>> deleteAdmin(@PathVariable Long id) {
+    public ResponseEntity<?> deleteAdmin(@PathVariable Long id, HttpServletRequest request) {
+        String role = resolveCallerRole(request, userService);
+        if (!"super_admin".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied: Only Super Administrators have permission to remove administrator accounts."));
+        }
         userService.deleteAdmin(id);
         return ResponseEntity.ok(Map.of("message", "Admin removed successfully", "id", id));
     }
