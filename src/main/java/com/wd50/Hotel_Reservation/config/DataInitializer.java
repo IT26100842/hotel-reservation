@@ -4,10 +4,12 @@ import com.wd50.Hotel_Reservation.model.Booking;
 import com.wd50.Hotel_Reservation.model.PromoCode;
 import com.wd50.Hotel_Reservation.model.Review;
 import com.wd50.Hotel_Reservation.model.Room;
+import com.wd50.Hotel_Reservation.model.RoomCategory;
 import com.wd50.Hotel_Reservation.model.User;
 import com.wd50.Hotel_Reservation.repository.BookingRepository;
 import com.wd50.Hotel_Reservation.repository.PromoCodeRepository;
 import com.wd50.Hotel_Reservation.repository.ReviewRepository;
+import com.wd50.Hotel_Reservation.repository.RoomCategoryRepository;
 import com.wd50.Hotel_Reservation.repository.RoomRepository;
 import com.wd50.Hotel_Reservation.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
@@ -25,29 +27,41 @@ public class DataInitializer implements CommandLineRunner {
     private final ReviewRepository reviewRepository;
     private final PromoCodeRepository promoCodeRepository;
     private final BookingRepository bookingRepository;
+    private final RoomCategoryRepository roomCategoryRepository;
 
     public DataInitializer(
             RoomRepository roomRepository,
             UserRepository userRepository,
             ReviewRepository reviewRepository,
             PromoCodeRepository promoCodeRepository,
-            BookingRepository bookingRepository
+            BookingRepository bookingRepository,
+            RoomCategoryRepository roomCategoryRepository
     ) {
         this.roomRepository = roomRepository;
         this.userRepository = userRepository;
         this.reviewRepository = reviewRepository;
         this.promoCodeRepository = promoCodeRepository;
         this.bookingRepository = bookingRepository;
+        this.roomCategoryRepository = roomCategoryRepository;
     }
 
     @Override
     public void run(String... args) {
+        seedCategories();
         seedRooms();
         seedPromoCodes();
         User defaultUser = seedUsers();
         seedReviews();
         seedBookings(defaultUser);
         ensureRoomInventoryAndBookingNumbers();
+    }
+
+    private void seedCategories() {
+        if (roomCategoryRepository.count() > 0) return;
+        roomCategoryRepository.save(new RoomCategory("Standard Room", "standard", "Artisanal tropical teak garden retreat", 12500.0, 1));
+        roomCategoryRepository.save(new RoomCategory("Deluxe Oceanfront", "deluxe", "Four-poster canopy bed overlooking the Indian Ocean", 18000.0, 2));
+        roomCategoryRepository.save(new RoomCategory("Presidential Suite", "suite", "Panoramic corner penthouse with private plunge pool", 32000.0, 3));
+        roomCategoryRepository.save(new RoomCategory("Coconut Grove Villa", "villa", "Secluded standalone pool villa hidden within palm groves", 45000.0, 4));
     }
 
     private void ensureRoomInventoryAndBookingNumbers() {
@@ -173,6 +187,18 @@ public class DataInitializer implements CommandLineRunner {
             User admin = new User("Serene Stay Head Admin", "admin@serenestay.com", "admin123", "+94 77 999 8888", "Bentota", "Sri Lanka", "");
             admin.setRole("super_admin");
             userRepository.save(admin);
+        }
+
+        if (!userRepository.existsByEmail("manager@serenestay.com")) {
+            User manager = new User("Operations Manager", "manager@serenestay.com", "manager123", "+94 77 888 7777", "Bentota", "Sri Lanka", "");
+            manager.setRole("manager");
+            userRepository.save(manager);
+        }
+
+        if (!userRepository.existsByEmail("staff@serenestay.com")) {
+            User staff = new User("Frontdesk Staff Admin", "staff@serenestay.com", "staff123", "+94 77 777 6666", "Bentota", "Sri Lanka", "");
+            staff.setRole("admin");
+            userRepository.save(staff);
         }
 
         return userRepository.findByEmail("thilinakavishan42@gmail.com").orElseGet(() -> {
