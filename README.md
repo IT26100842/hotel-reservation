@@ -4,7 +4,7 @@ A comprehensive, full-stack monolithic hotel room reservation system built with 
 
 ## 📸 Screenshots
 
-![App Screenshot](docs/web.webp)
+![App Screenshot](docs/img.png)
 
 ## 🛠️ Tech Stack
 
