@@ -5,6 +5,8 @@ import com.wd50.Hotel_Reservation.dto.CancelBookingRequest;
 import com.wd50.Hotel_Reservation.dto.RateBookingRequest;
 import com.wd50.Hotel_Reservation.model.Booking;
 import com.wd50.Hotel_Reservation.service.BookingService;
+import com.wd50.Hotel_Reservation.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -24,9 +26,11 @@ import java.util.Map;
 public class BookingController extends BaseController {
 
     private final BookingService bookingService;
+    private final UserService userService;
 
-    public BookingController(BookingService bookingService) {
+    public BookingController(BookingService bookingService, UserService userService) {
         this.bookingService = bookingService;
+        this.userService = userService;
     }
 
     @PostMapping
@@ -71,15 +75,40 @@ public class BookingController extends BaseController {
     }
 
     @PutMapping("/{id}/status")
-    public ResponseEntity<Booking> updateBookingStatus(
+    public ResponseEntity<?> updateBookingStatus(
             @PathVariable Long id,
-            @RequestBody Map<String, String> body
+            @RequestBody Map<String, String> body,
+            HttpServletRequest servletRequest
     ) {
+        String role = resolveCallerRole(servletRequest, userService);
+        if ("admin".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied: Standard Administrators have view-only access to reservations."));
+        }
         return ResponseEntity.ok(bookingService.updateStatus(id, body != null ? body.get("status") : null));
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateBooking(
+            @PathVariable Long id,
+            @RequestBody BookingRequest request,
+            HttpServletRequest servletRequest
+    ) {
+        String role = resolveCallerRole(servletRequest, userService);
+        if ("admin".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied: Standard Administrators have view-only access to reservations."));
+        }
+        return ResponseEntity.ok(bookingService.updateBookingDetails(id, request));
+    }
+
     @DeleteMapping("/{id}")
-    public ResponseEntity<Map<String, Object>> deleteBooking(@PathVariable Long id) {
+    public ResponseEntity<?> deleteBooking(@PathVariable Long id, HttpServletRequest request) {
+        String role = resolveCallerRole(request, userService);
+        if ("admin".equalsIgnoreCase(role)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("error", "Access denied: Standard Administrators cannot delete reservation records. Please contact an Operations Manager or Super Administrator."));
+        }
         bookingService.delete(id);
         return ResponseEntity.ok(Map.of("message", "Booking deleted successfully", "id", id));
     }
