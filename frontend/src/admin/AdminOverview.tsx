@@ -13,7 +13,8 @@ import {
   ArrowRight,
   ShieldAlert,
   Percent,
-  Sparkles
+  Sparkles,
+  Loader2
 } from 'lucide-react';
 
 interface AdminOverviewProps {
@@ -24,6 +25,7 @@ interface AdminOverviewProps {
   onNavigateTab: (tab: AdminTab) => void;
   onOpenAddRoom: () => void;
   onOpenAddAdmin: () => void;
+  isLoading?: boolean;
 }
 
 export const AdminOverview: React.FC<AdminOverviewProps> = ({
@@ -33,13 +35,48 @@ export const AdminOverview: React.FC<AdminOverviewProps> = ({
   admins,
   onNavigateTab,
   onOpenAddRoom,
-  onOpenAddAdmin
+  onOpenAddAdmin,
+  isLoading = false
 }) => {
   const recentBookings = bookings.slice(0, 5);
 
   const formatLKR = (num: number) => {
     return 'LKR ' + Math.round(num).toLocaleString('en-US');
   };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        {/* Metric Cards Skeleton */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              className="p-5 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm animate-pulse"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <div className="h-3 w-24 bg-stone-200 dark:bg-stone-800 rounded"></div>
+                <div className="w-10 h-10 rounded-xl bg-stone-200 dark:bg-stone-800"></div>
+              </div>
+              <div className="h-8 w-32 bg-stone-200 dark:bg-stone-800 rounded mb-2"></div>
+              <div className="h-3 w-40 bg-stone-100 dark:bg-stone-900 rounded"></div>
+            </div>
+          ))}
+        </div>
+
+        {/* Loading Indicator */}
+        <div className="p-16 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex flex-col items-center justify-center text-center">
+          <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin mb-3" />
+          <h4 className="font-serif text-base font-bold text-stone-900 dark:text-stone-100">
+            Loading Operations Dashboard...
+          </h4>
+          <p className="text-xs text-stone-400 mt-1">
+            Retrieving live occupancy metrics, room counts, and reservations
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

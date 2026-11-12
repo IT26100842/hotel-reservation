@@ -1,10 +1,10 @@
-package com.wd50.Hotel_Reservation;
+package com.wd50.Hotel_Reservation.controller;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 
 @Controller
-public class SpaController {
+public class MainController {
 
     @GetMapping(value = {
         "/rooms",

@@ -14,7 +14,8 @@ import {
   CreditCard,
   X,
   ShieldCheck,
-  FileText
+  FileText,
+  Loader2
 } from 'lucide-react';
 
 interface AdminBookingsProps {
@@ -22,13 +23,15 @@ interface AdminBookingsProps {
   onUpdateStatus: (id: string, status: string) => Promise<void>;
   onDeleteBooking: (id: string) => Promise<void>;
   onShowToast: (msg: string, type?: 'success' | 'info') => void;
+  isLoading?: boolean;
 }
 
 export const AdminBookings: React.FC<AdminBookingsProps> = ({
   bookings,
   onUpdateStatus,
   onDeleteBooking,
-  onShowToast
+  onShowToast,
+  isLoading = false
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'checked_in' | 'completed' | 'cancelled'>('all');
@@ -113,7 +116,17 @@ export const AdminBookings: React.FC<AdminBookingsProps> = ({
 
       {/* 2. Bookings Table */}
       <div className="p-6 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm overflow-hidden">
-        {filtered.length === 0 ? (
+        {isLoading ? (
+          <div className="py-16 text-center text-stone-500 flex flex-col items-center justify-center">
+            <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin mb-3" />
+            <h4 className="font-serif text-base font-bold text-stone-900 dark:text-stone-100">
+              Loading Reservations...
+            </h4>
+            <p className="text-xs text-stone-400 mt-1">
+              Fetching guest booking records and vouchers from database
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="py-12 text-center text-stone-500">
             <FileText className="w-10 h-10 mx-auto text-stone-300 dark:text-stone-600 mb-2" />
             <p className="text-sm font-semibold">No reservations found matching criteria</p>

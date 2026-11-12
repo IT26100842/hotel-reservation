@@ -13,7 +13,8 @@ import {
   User,
   Phone,
   ShieldCheck,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 import { getAvatarUrl, NO_DP_AVATAR } from '../utils/avatar';
 import { validateFullName, validateEmail, validatePhoneNumber } from '../utils/validation';
@@ -27,6 +28,7 @@ interface AdminStaffProps {
   onShowToast: (msg: string, type?: 'success' | 'info') => void;
   openCreateModalDirectly?: boolean;
   onClearOpenModalDirectly?: () => void;
+  isLoading?: boolean;
 }
 
 export const AdminStaff: React.FC<AdminStaffProps> = ({
@@ -37,7 +39,8 @@ export const AdminStaff: React.FC<AdminStaffProps> = ({
   onDeleteAdmin,
   onShowToast,
   openCreateModalDirectly = false,
-  onClearOpenModalDirectly
+  onClearOpenModalDirectly,
+  isLoading = false
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [modalOpen, setModalOpen] = useState(openCreateModalDirectly);
@@ -215,7 +218,24 @@ export const AdminStaff: React.FC<AdminStaffProps> = ({
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        {isLoading ? (
+          <div className="py-16 text-center text-stone-500 flex flex-col items-center justify-center">
+            <Loader2 className="w-8 h-8 text-emerald-600 dark:text-emerald-400 animate-spin mb-3" />
+            <h4 className="font-serif text-base font-bold text-stone-900 dark:text-stone-100">
+              Loading Administrative Staff...
+            </h4>
+            <p className="text-xs text-stone-400 mt-1">
+              Retrieving staff profiles and privileges from database
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-12 text-center text-stone-500">
+            <ShieldAlert className="w-10 h-10 mx-auto text-stone-300 dark:text-stone-600 mb-2" />
+            <p className="text-sm font-semibold">No administrators found</p>
+            <p className="text-xs text-stone-400 mt-1">Try relaxing your search filter or add a new admin</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
               <tr className="border-b border-stone-200 dark:border-[#1C2F29] text-stone-500 dark:text-stone-400 uppercase text-[10px] font-semibold">
@@ -324,6 +344,7 @@ export const AdminStaff: React.FC<AdminStaffProps> = ({
             </tbody>
           </table>
         </div>
+        )}
       </div>
 
       {/* 3. Add / Edit Admin Modal */}

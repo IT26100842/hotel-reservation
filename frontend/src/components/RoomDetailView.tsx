@@ -91,7 +91,6 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
     setCopiedShare(true);
     setTimeout(() => setCopiedShare(false), 2000);
   };
-
   const totalRoomsCount = room.totalRooms ?? 5;
   const availableRoomsCount = room.availableRooms ?? totalRoomsCount;
   const isRoomSoldOut = availableRoomsCount <= 0 || room.status === 'maintenance';
@@ -118,6 +117,16 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
       children
     });
   };
+
+  const formatYYYYMMDD = (d: Date) => 
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+  const minDateObj = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const minAllowedDate = formatYYYYMMDD(minDateObj);
+
+  const baseCheckoutDate = new Date(checkIn || minDateObj);
+  baseCheckoutDate.setDate(baseCheckoutDate.getDate() + 1);
+  const minCheckOutDate = formatYYYYMMDD(baseCheckoutDate);
 
   return (
     <div className="min-h-screen bg-[#FBFBF9] dark:bg-[#0A1210] py-6 sm:py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto transition-colors duration-300">
@@ -379,10 +388,12 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
                   <input
                     type="date"
                     value={checkIn}
+                    min={minAllowedDate}
                     onChange={(e) => setCheckIn(e.target.value)}
                     className="w-full text-xs sm:text-sm font-semibold text-stone-900 dark:text-stone-100 bg-transparent focus:outline-none cursor-pointer mt-0.5"
                   />
                 </div>
+                
                 <div className="p-3 bg-stone-50/50 dark:bg-[#172A24]/40">
                   <label className="block text-[10px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
                     Check-out
@@ -390,6 +401,7 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
                   <input
                     type="date"
                     value={checkOut}
+                    min={minCheckOutDate}
                     onChange={(e) => setCheckOut(e.target.value)}
                     className="w-full text-xs sm:text-sm font-semibold text-stone-900 dark:text-stone-100 bg-transparent focus:outline-none cursor-pointer mt-0.5"
                   />
