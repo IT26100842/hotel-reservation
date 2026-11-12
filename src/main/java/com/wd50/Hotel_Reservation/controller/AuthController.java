@@ -69,6 +69,46 @@ public class AuthController extends BaseController {
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
     }
 
+    @GetMapping("/validate-session")
+    public ResponseEntity<?> validateSession(
+            @RequestParam(required = false) Long id,
+            @RequestParam(required = false) String email
+    ) {
+        java.util.Optional<User> userOpt = java.util.Optional.empty();
+        if (id != null && id > 0) {
+            userOpt = userService.findById(id);
+        }
+        if (userOpt.isEmpty() && email != null && !email.isBlank()) {
+            userOpt = userService.findByEmail(email.trim().toLowerCase());
+        }
+
+        if (userOpt.isEmpty()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of(
+                    "valid", false,
+                    "reason", "deleted",
+                    "message", "Account no longer exists in hotel database."
+            ));
+        }
+
+        User u = userOpt.get();
+        if ("suspended".equalsIgnoreCase(u.getStatus())) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(Map.of(
+                    "valid", false,
+                    "reason", "suspended",
+                    "status", "suspended",
+                    "fullName", u.getFullName() != null ? u.getFullName() : "Guest",
+                    "email", u.getEmail(),
+                    "message", "Your account has been suspended by hotel administration. Please visit the hotel front desk to resolve this issue."
+            ));
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "valid", true,
+                "status", u.getStatus() != null ? u.getStatus() : "active",
+                "user", u
+        ));
+    }
+
     @GetMapping("/profile")
     public ResponseEntity<?> getProfile(
             @RequestParam(required = false) Long id,

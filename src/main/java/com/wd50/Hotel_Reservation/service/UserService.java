@@ -3,6 +3,8 @@ package com.wd50.Hotel_Reservation.service;
 import com.wd50.Hotel_Reservation.dto.RegisterRequest;
 import com.wd50.Hotel_Reservation.dto.UpdateProfileRequest;
 import com.wd50.Hotel_Reservation.model.User;
+import com.wd50.Hotel_Reservation.model.Booking;
+import com.wd50.Hotel_Reservation.repository.BookingRepository;
 import com.wd50.Hotel_Reservation.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -25,14 +27,16 @@ import java.util.regex.Pattern;
 public class UserService extends BaseService<User> {
 
     private final UserRepository userRepository;
+    private final BookingRepository bookingRepository;
     private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
 
     @Value("${imgbb.api.key:5e3a92d512d29cc4aae18b67ca78d6f1}")
     private String imgbbApiKey;
 
-    public UserService(UserRepository userRepository) {
+    public UserService(UserRepository userRepository, BookingRepository bookingRepository) {
         super(userRepository);
         this.userRepository = userRepository;
+        this.bookingRepository = bookingRepository;
     }
 
     public static String hashPassword(String plainPassword) {
@@ -218,6 +222,42 @@ public class UserService extends BaseService<User> {
         User user = getById(id);
         if ("super_admin".equalsIgnoreCase(user.getRole()) || "admin@serenestay.com".equalsIgnoreCase(user.getEmail())) {
             throw new IllegalArgumentException("The primary Super Administrator cannot be deleted.");
+        }
+        delete(id);
+    }
+
+    public User updateGuest(Long id, Map<String, String> body) {
+        User user = getById(id);
+        if (body.get("fullName") != null) user.setFullName(body.get("fullName").trim());
+        if (body.get("email") != null && !body.get("email").isBlank()) {
+            String email = body.get("email").trim().toLowerCase();
+            if (!email.equalsIgnoreCase(user.getEmail()) && userRepository.existsByEmail(email)) {
+                throw new IllegalArgumentException("Email already exists: " + email);
+            }
+            user.setEmail(email);
+        }
+        if (body.get("phone") != null) user.setPhone(body.get("phone").trim());
+        if (body.get("city") != null) user.setCity(body.get("city").trim());
+        if (body.get("country") != null) user.setCountry(body.get("country").trim());
+        if (body.get("status") != null) user.setStatus(body.get("status").trim());
+        if (body.get("role") != null && !user.hasAdminRole()) {
+            user.setRole(body.get("role").trim().toLowerCase());
+        }
+        return save(user);
+    }
+
+    public void deleteGuest(Long id) {
+        User user = getById(id);
+        if (user.hasAdminRole()) {
+            throw new IllegalArgumentException("Cannot delete administrator accounts via guest management.");
+        }
+        List<Booking> userBookings = bookingRepository.findByUserIdOrderByCreatedAtDesc(id);
+        List<Booking> emailBookings = (user.getEmail() != null && !user.getEmail().isBlank())
+                ? bookingRepository.findByGuestEmailOrderByCreatedAtDesc(user.getEmail().trim().toLowerCase())
+                : List.of();
+
+        if (!userBookings.isEmpty() || !emailBookings.isEmpty()) {
+            throw new IllegalArgumentException("Cannot delete guest account with existing reservation history. Please click edit and set account status to suspended instead.");
         }
         delete(id);
     }
