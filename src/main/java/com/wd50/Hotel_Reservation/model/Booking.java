@@ -59,11 +59,15 @@ public class Booking extends BaseEntity {
     @Column(name = "payment_method", nullable = false, length = 30)
     private String paymentMethod = "pay_at_hotel";
 
+    @Column(name = "room_price_per_night")
+    private Double roomPricePerNight = 12000.0;
+
     private Double subtotal = 0.0;
 
     @Column(name = "service_charge")
     private Double serviceCharge = 0.0;
 
+    @Column(name = "tax_amount")
     private Double taxes = 0.0;
 
     @Column(name = "discount_amount")
@@ -122,7 +126,8 @@ public class Booking extends BaseEntity {
     }
 
     public void calculateFinancials(Double reqSubtotal, Double reqServiceCharge, Double reqTaxes, Double reqDiscount, Double reqTotal) {
-        double base = room != null && room.getPricePerNight() != null ? room.getPricePerNight() : 0.0;
+        double base = room != null && room.getPricePerNight() != null ? room.getPricePerNight() : 12000.0;
+        this.roomPricePerNight = base;
         int stayNights = nights != null && nights > 0 ? nights : 1;
         this.subtotal = reqSubtotal != null ? reqSubtotal : (base * stayNights);
         this.serviceCharge = reqServiceCharge != null ? reqServiceCharge : Math.round(this.subtotal * 0.10);
@@ -206,6 +211,9 @@ public class Booking extends BaseEntity {
 
     public String getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public Double getRoomPricePerNight() { return roomPricePerNight; }
+    public void setRoomPricePerNight(Double roomPricePerNight) { this.roomPricePerNight = roomPricePerNight; }
 
     public Double getSubtotal() { return subtotal; }
     public void setSubtotal(Double subtotal) { this.subtotal = subtotal; }

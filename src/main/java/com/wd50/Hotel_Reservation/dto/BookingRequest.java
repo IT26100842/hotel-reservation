@@ -1,7 +1,6 @@
 package com.wd50.Hotel_Reservation.dto;
 
 public class BookingRequest {
-
     private String roomId;
     private String roomNumber;
     private Long userId;
@@ -19,6 +18,7 @@ public class BookingRequest {
     private String promoCodeApplied;
     private Double totalAmount;
     private String currency;
+    private String status;
 
     public BookingRequest() {}
 
@@ -72,6 +72,7 @@ public class BookingRequest {
 
     public String getCurrency() { return currency; }
     public void setCurrency(String currency) { this.currency = currency; }
+
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
 }
-
-
