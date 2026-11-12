@@ -4,7 +4,7 @@ A comprehensive, full-stack monolithic hotel room reservation system built with 
 
 ## 📸 Screenshots
 
-![App Screenshot](docs/hotel-reservation.up.railway.app_(Nest Hub Max).png)
+![App Screenshot](docs/hotel-reservation.up.railway.app.png)
 
 ## 🛠️ Tech Stack
 
