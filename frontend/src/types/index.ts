@@ -1,10 +1,22 @@
-export type RoomType = 'all' | 'standard' | 'deluxe' | 'suite' | 'villa';
+export type RoomType = 'all' | 'standard' | 'deluxe' | 'suite' | 'villa' | string;
+
+export interface RoomCategoryItem {
+  id: number | string;
+  name: string;
+  slug: string;
+  shortDescription?: string;
+  basePrice?: number;
+  sortOrder?: number;
+  isActive?: boolean;
+}
 
 export interface Room {
   id: string;
   name: string;
   slug: string;
   type: RoomType;
+  categoryId?: number;
+  roomNumber?: string;
   pricePerNight: number;
   currency: string;
   rating: number;
@@ -116,7 +128,7 @@ export type AppView = 'home' | 'search' | 'room-detail' | 'checkout' | 'dashboar
 export type AuthModalType = 'login' | 'register' | 'forgot-password' | null;
 export type ThemeMode = 'light' | 'dark' | 'system';
 
-export type AdminTab = 'overview' | 'rooms' | 'bookings' | 'admins' | 'guests' | 'reviews' | 'promos' | 'profile';
+export type AdminTab = 'overview' | 'rooms' | 'bookings' | 'admins' | 'guests' | 'reviews' | 'promos' | 'profile' | 'categories';
 
 export interface AdminStats {
   totalRevenue: number;

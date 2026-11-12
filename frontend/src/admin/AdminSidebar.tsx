@@ -13,7 +13,8 @@ import {
   LogOut,
   Moon,
   Sun,
-  Hotel
+  Hotel,
+  Layers
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { getAvatarUrl, NO_DP_AVATAR } from '../utils/avatar';
@@ -39,11 +40,22 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
 }) => {
   const { theme, toggleTheme } = useTheme();
 
+  const isSuperAdmin = adminUser?.role === 'super_admin';
+  const isManager = adminUser?.role === 'manager';
+  const isStandardAdmin = adminUser?.role === 'admin';
+
   const menuItems: { id: AdminTab; label: string; icon: React.FC<{ className?: string }>; badge?: string }[] = [
     { id: 'overview', label: 'Dashboard Overview', icon: LayoutDashboard },
     { id: 'rooms', label: 'Rooms & Suites', icon: BedDouble },
-    { id: 'bookings', label: 'Reservations', icon: CalendarCheck },
-    { id: 'admins', label: 'Admin & Staff', icon: ShieldAlert, badge: 'Role Access' },
+    { id: 'categories', label: 'Room Categories', icon: Layers },
+    { id: 'bookings', label: 'Reservations', icon: CalendarCheck, badge: isStandardAdmin ? 'Edit Only' : undefined },
+    // Only show Admins & Staff for Super Admin and Manager
+    ...(!isStandardAdmin ? [{
+      id: 'admins' as AdminTab,
+      label: 'Admin & Staff',
+      icon: ShieldAlert,
+      badge: isSuperAdmin ? 'Full Access' : 'View Only'
+    }] : []),
     { id: 'guests', label: 'Guest Directory', icon: Users },
     { id: 'reviews', label: 'Reviews Moderation', icon: MessageSquare },
     { id: 'promos', label: 'Promo Discounts', icon: TicketPercent },
@@ -53,6 +65,28 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
   const handleTabClick = (tab: AdminTab) => {
     onSelectTab(tab);
     onCloseMobile();
+  };
+
+  const getRoleBadge = () => {
+    if (isSuperAdmin) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-950/80 border border-amber-700/60 px-1.5 py-0.5 rounded">
+          Super Admin
+        </span>
+      );
+    }
+    if (isManager) {
+      return (
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-300 bg-blue-950/80 border border-blue-700/60 px-1.5 py-0.5 rounded">
+          Operations Manager
+        </span>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-300 bg-emerald-950/80 border border-emerald-700/60 px-1.5 py-0.5 rounded">
+        Standard Admin
+      </span>
+    );
   };
 
   const content = (
@@ -92,9 +126,9 @@ export const AdminSidebar: React.FC<AdminSidebarProps> = ({
           />
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-stone-100 truncate">{adminUser.fullName}</p>
-            <span className="inline-block text-[10px] font-medium text-emerald-400 capitalize">
-              {adminUser.role === 'super_admin' ? 'Super Administrator' : adminUser.role || 'Administrator'}
-            </span>
+            <div className="mt-0.5">
+              {getRoleBadge()}
+            </div>
           </div>
         </button>
       )}

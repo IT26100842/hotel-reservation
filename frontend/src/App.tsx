@@ -34,7 +34,7 @@ import { AuthModal } from './components/AuthModal';
 import { Footer } from './components/Footer';
 import { AdminPortal } from './admin/AdminPortal';
 import { ThemeProvider } from './context/ThemeContext';
-import { CheckCircle2, Info, X } from 'lucide-react';
+import { CheckCircle2, Info, X, AlertTriangle, LogOut } from 'lucide-react';
 import CustomCursor from "./components/CustomCursor"
 
 function AppContent() {
@@ -104,11 +104,56 @@ function AppContent() {
 
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; type?: 'success' | 'info' } | null>(null);
+  // Suspended account modal notification state
+  const [suspendedAccountInfo, setSuspendedAccountInfo] = useState<{
+    name: string;
+    email: string;
+    message?: string;
+  } | null>(null);
 
   const showToast = (message: string, type: 'success' | 'info' = 'success') => {
     setToast({ message, type });
     setTimeout(() => setToast(null), 3500);
   };
+
+  const handleLogout = () => {
+    authApi.logout().catch(() => {});
+    clearUserSession();
+    setUser(null);
+    setSuspendedAccountInfo(null);
+    showToast('Successfully logged out.', 'info');
+  };
+
+  // Validate logged-in user account status with server on load
+  useEffect(() => {
+    if (user?.id || user?.email) {
+      authApi.validateSession(user.id, user.email).then((res) => {
+        if (!res.valid) {
+          if (res.reason === 'suspended') {
+            setSuspendedAccountInfo({
+              name: user.fullName || 'Guest',
+              email: user.email,
+              message: res.message
+            });
+            const updated = { ...user, status: 'suspended' };
+            setUser(updated);
+            saveUserSession(updated);
+          } else if (res.reason === 'deleted') {
+            clearUserSession();
+            setUser(null);
+            showToast('Your account was removed by hotel administration. You have been signed out.', 'info');
+          }
+        } else if (res.user) {
+          if (res.user.status !== user.status || res.user.fullName !== user.fullName) {
+            setUser(res.user);
+            saveUserSession(res.user);
+          }
+        }
+      }).catch((err) => {
+        console.warn('Session verification error:', err);
+      });
+    }
+  }, []);
 
   // Fetch rooms from backend MySQL API on mount
   useEffect(() => {
@@ -246,6 +291,14 @@ function AppContent() {
       setAuthModal('login');
       return;
     }
+    if (user.status === 'suspended') {
+      setSuspendedAccountInfo({
+        name: user.fullName || 'Guest',
+        email: user.email
+      });
+      showToast('Your account is currently suspended. Please visit the hotel front desk.', 'info');
+      return;
+    }
     setCheckoutParams(details);
     triggerNavigation('checkout');
   };
@@ -377,8 +430,7 @@ function AppContent() {
     <div className="min-h-screen flex flex-col bg-[#FBFBF9] dark:bg-[#0A1210] text-[#1A1F1D] dark:text-[#EDEDEB] transition-colors duration-300 overflow-x-hidden mainClass">
       {/* Top Animated Scroll Progress Bar Tracking Scroll Depth */}
       <ScrollProgressBar />
-      <CustomCursor/>
-      
+      {/*<CustomCursor/>*/}
       {/* 1. Smart Initial Preloader */}
       {initialLoading && (
         <SmartPreloader onComplete={() => setInitialLoading(false)} />
@@ -409,12 +461,7 @@ function AppContent() {
         }}
         user={user}
         onOpenAuth={(type) => setAuthModal(type)}
-        onLogout={() => {
-          authApi.logout();
-          clearUserSession();
-          setUser(null);
-          showToast('Successfully logged out', 'info');
-        }}
+        onLogout={handleLogout}
         reservationsCount={bookings.filter((b) => b.status === 'confirmed').length}
       />
 
@@ -534,6 +581,68 @@ function AppContent() {
             showToast(`Welcome back, ${newUser.fullName}!`);
           }}
         />
+      )}
+
+      {/* 6.5. Suspended Account Warning Modal with Front Desk Instructions and Sign Out */}
+      {suspendedAccountInfo && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white dark:bg-[#101F1A] border-2 border-rose-500/40 rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl relative text-left">
+            <button
+              onClick={() => setSuspendedAccountInfo(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-full text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors cursor-pointer"
+              title="Close modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 dark:bg-rose-950/80 border border-rose-300 dark:border-rose-800 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0 shadow-sm">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400 px-2 py-0.5 rounded-full bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800">
+                  Account Suspended
+                </span>
+                <h3 className="font-serif text-lg sm:text-xl font-bold text-stone-900 dark:text-stone-100 mt-1">
+                  ගිණුම අත්හිටුවා ඇත
+                </h3>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs sm:text-sm text-stone-600 dark:text-stone-300">
+              <p>
+                Dear <strong className="text-stone-900 dark:text-stone-100">{suspendedAccountInfo.name}</strong>,
+              </p>
+              <p className="leading-relaxed">
+                Your guest account (<code className="font-mono text-stone-800 dark:text-stone-200 bg-stone-100 dark:bg-stone-800 px-1.5 py-0.5 rounded">{suspendedAccountInfo.email}</code>) has been temporarily suspended by hotel management.
+              </p>
+              <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-900 dark:text-amber-200 text-xs leading-relaxed">
+                <strong>විශේෂ දැනුම්දීම:</strong> ඔබගේ ගිණුම හෝටල් කළමනාකාරිත්වය විසින් අත්හිටුවා ඇත. කරුණාකර හෝටලයේ පිළිගැනීමේ නිලධාරියා (Front Desk) හමුවී හෝ පාලනාධිකාරිය අමතා මෙය විසඳා ගන්න.
+              </div>
+              <p className="text-[11px] text-stone-400">
+                You will not be able to place new reservations or modify stays until your account status is restored to active.
+              </p>
+            </div>
+
+            <div className="mt-6 pt-4 border-t border-stone-200 dark:border-[#1C2F29] flex flex-col sm:flex-row items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs transition-colors flex items-center justify-center gap-2 shadow-md cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+                <span>Sign Out / Log Out (ඉවත් වන්න)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSuspendedAccountInfo(null)}
+                className="w-full sm:w-auto py-2.5 px-4 rounded-xl border border-stone-200 dark:border-[#223B33] text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-[#162A24] text-xs font-medium transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 7. Action Toast Notification */}

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Room, RoomType, SearchFilters } from '../types';
+import { Room, RoomType, SearchFilters, RoomCategoryItem } from '../types';
+import { categoryApi } from '../services/api';
 import { ImageWithFallback } from './ImageWithFallback';
 import {
   SlidersHorizontal,
@@ -33,6 +34,20 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
 }) => {
   const [filters, setFilters] = useState<SearchFilters>(initialFilters);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [categories, setCategories] = useState<RoomCategoryItem[]>([
+    { id: 1, name: 'Standard Room', slug: 'standard' },
+    { id: 2, name: 'Deluxe Oceanfront', slug: 'deluxe' },
+    { id: 3, name: 'Presidential Suite', slug: 'suite' },
+    { id: 4, name: 'Coconut Grove Villa', slug: 'villa' }
+  ]);
+
+  useEffect(() => {
+    categoryApi.getAll().then((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setCategories(data);
+      }
+    }).catch((err) => console.warn('Failed to load categories in SearchResultsView:', err));
+  }, []);
 
   // Synchronize internal state whenever initialFilters prop updates
   useEffect(() => {
@@ -221,10 +236,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
             <div className="space-y-1.5">
               {[
                 { id: 'all', label: 'All Room Types' },
-                { id: 'standard', label: 'Standard Room' },
-                { id: 'deluxe', label: 'Deluxe Oceanfront' },
-                { id: 'suite', label: 'Presidential Suite' },
-                { id: 'villa', label: 'Coconut Grove Villa' }
+                ...categories.map((c) => ({ id: c.slug, label: c.name }))
               ].map((opt) => (
                 <button
                   key={opt.id}
@@ -554,10 +566,7 @@ export const SearchResultsView: React.FC<SearchResultsViewProps> = ({
               <div className="space-y-1">
                 {[
                   { id: 'all', label: 'All Room Types' },
-                  { id: 'standard', label: 'Standard Room' },
-                  { id: 'deluxe', label: 'Deluxe Oceanfront' },
-                  { id: 'suite', label: 'Presidential Suite' },
-                  { id: 'villa', label: 'Coconut Grove Villa' }
+                  ...categories.map((c) => ({ id: c.slug, label: c.name }))
                 ].map((opt) => (
                   <button
                     key={opt.id}

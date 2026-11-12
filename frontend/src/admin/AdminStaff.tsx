@@ -110,8 +110,14 @@ export const AdminStaff: React.FC<AdminStaffProps> = ({
     if (onClearOpenModalDirectly) onClearOpenModalDirectly();
   };
 
+  const isSuperAdmin = currentAdmin?.role === 'super_admin';
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSuperAdmin) {
+      onShowToast('Permission denied: Only Super Administrators can create or modify staff accounts.', 'info');
+      return;
+    }
     setTouched({
       fullName: true,
       email: true,
@@ -153,6 +159,11 @@ export const AdminStaff: React.FC<AdminStaffProps> = ({
   };
 
   const handleDelete = async (adm: UserProfile) => {
+    if (!isSuperAdmin) {
+      onShowToast('Permission denied: Only Super Administrators can remove staff accounts.', 'info');
+      return;
+    }
+
     if (adm.email === 'admin@serenestay.com' || adm.role === 'super_admin') {
       onShowToast('The Primary Super Administrator cannot be removed.', 'info');
       return;
@@ -182,6 +193,16 @@ export const AdminStaff: React.FC<AdminStaffProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Role permission alert banner */}
+      {!isSuperAdmin && (
+        <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-start gap-3 text-xs text-amber-900 dark:text-amber-200">
+          <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-bold">Staff Management Notice:</span> Only the Super Administrator is authorized to create, update, or remove administrator and staff accounts. As an {currentAdmin?.role === 'manager' ? 'Operations Manager' : 'Administrator'}, you have view-only access to staff profiles.
+          </div>
+        </div>
+      )}
+
       {/* 1. Header controls: Search & Add New Admin button */}
       <div className="p-5 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
         <div className="relative flex-1 max-w-md">
@@ -195,14 +216,21 @@ export const AdminStaff: React.FC<AdminStaffProps> = ({
           />
         </div>
 
-        {/* Add Admin Button */}
-        <button
-          onClick={openCreateModal}
-          className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-950/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add New Administrator</span>
-        </button>
+        {/* Add Admin Button - Only for Super Admin */}
+        {isSuperAdmin ? (
+          <button
+            onClick={openCreateModal}
+            className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-950/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add New Administrator</span>
+          </button>
+        ) : (
+          <div className="px-3.5 py-2 rounded-xl bg-stone-100 dark:bg-stone-900 text-stone-500 text-xs flex items-center gap-1.5 shrink-0 border border-stone-200 dark:border-stone-800">
+            <ShieldCheck className="w-3.5 h-3.5 text-stone-400" />
+            <span>Super Admin Creation Only</span>
+          </div>
+        )}
       </div>
 
       {/* 2. Admin List Table */}
@@ -319,24 +347,28 @@ export const AdminStaff: React.FC<AdminStaffProps> = ({
 
                     {/* Actions */}
                     <td className="py-3.5 px-3 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => openEditModal(adm)}
-                          className="p-1.5 rounded-lg border border-stone-200 dark:border-[#223B33] text-stone-700 dark:text-stone-300 hover:bg-emerald-50 dark:hover:bg-[#162A24] hover:text-emerald-600 transition-colors cursor-pointer"
-                          title="Edit role & info"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
+                      {isSuperAdmin ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => openEditModal(adm)}
+                            className="p-1.5 rounded-lg border border-stone-200 dark:border-[#223B33] text-stone-700 dark:text-stone-300 hover:bg-emerald-50 dark:hover:bg-[#162A24] hover:text-emerald-600 transition-colors cursor-pointer"
+                            title="Edit role & info"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
 
-                        <button
-                          disabled={Boolean(isPrimary || isYou)}
-                          onClick={() => handleDelete(adm)}
-                          className="p-1.5 rounded-lg border border-stone-200 dark:border-[#223B33] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                          title={isPrimary ? 'Primary super admin cannot be deleted' : isYou ? 'Cannot delete your own account' : 'Remove admin'}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                          <button
+                            disabled={Boolean(isPrimary || isYou)}
+                            onClick={() => handleDelete(adm)}
+                            className="p-1.5 rounded-lg border border-stone-200 dark:border-[#223B33] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            title={isPrimary ? 'Primary super admin cannot be deleted' : isYou ? 'Cannot delete your own account' : 'Remove admin'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-stone-400 italic">View Only</span>
+                      )}
                     </td>
                   </tr>
                 );

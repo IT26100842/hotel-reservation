@@ -4,13 +4,14 @@ import { Review, UserProfile } from '../types';
 import { reviewApi } from '../services/api';
 import { 
   Star, Heart, ThumbsUp, MessageSquarePlus, Check, User, X, 
-  AlertCircle, BadgeCheck, ChevronLeft, ChevronRight 
+  AlertCircle, BadgeCheck, ChevronLeft, ChevronRight, Edit2, Trash2
 } from 'lucide-react';
 import { ScrollReveal, StaggerContainer, StaggerItem } from './ScrollReveal';
 import { getAvatarUrl, NO_DP_AVATAR } from '../utils/avatar';
 import {
   getMyReviewIdsFromCookie,
   addMyReviewIdToCookie,
+  removeMyReviewIdFromCookie,
   getLikedReviewIdsFromCookie,
   saveLikedReviewIdsToCookie,
   getHeartedReviewIdsFromCookie,
@@ -83,6 +84,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
 
   // Review Form States
   const [showForm, setShowForm] = useState(false);
+  const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
   const [guestName, setGuestName] = useState('');
   const [rating, setRating] = useState(5);
   const [hoverRating, setHoverRating] = useState(0);
@@ -170,6 +172,31 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
     }
   };
 
+  const handleStartEdit = (rev: ReviewWithReactions) => {
+    setEditingReviewId(rev.id);
+    setGuestName(rev.guestName);
+    setRating(rev.rating);
+    setRoomBooked(rev.roomBooked || 'Deluxe Oceanfront');
+    setComment(rev.comment.replace(/^“|”$/g, ''));
+    setFormError(null);
+    setShowForm(true);
+    const elem = document.getElementById('reviews-section');
+    if (elem) elem.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleDeleteMyReview = async (rev: ReviewWithReactions) => {
+    if (window.confirm('Are you sure you want to delete your review?')) {
+      try {
+        await reviewApi.delete(rev.id);
+        const updatedMyReviews = removeMyReviewIdFromCookie(rev.id);
+        setMyReviewIds(updatedMyReviews);
+        setReviewsList((prev) => prev.filter((r) => r.id !== rev.id));
+      } catch (err: any) {
+        alert('Failed to delete review: ' + (err.message || 'Error'));
+      }
+    }
+  };
+
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -187,6 +214,43 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
       return;
     }
 
+    if (editingReviewId) {
+      try {
+        const updated = await reviewApi.update(editingReviewId, {
+          guestName: finalName,
+          rating,
+          comment: `“${comment.trim()}”`,
+          roomBooked,
+          avatar: user?.avatar || ''
+        });
+        setReviewsList((prev) =>
+          prev.map((r) =>
+            r.id === editingReviewId
+              ? {
+                  ...r,
+                  guestName: updated.guestName,
+                  rating: updated.rating,
+                  comment: updated.comment,
+                  roomBooked: updated.roomBooked
+                }
+              : r
+          )
+        );
+        setEditingReviewId(null);
+        setComment('');
+        setGuestName('');
+        setSubmitSuccess(true);
+        setTimeout(() => {
+          setSubmitSuccess(false);
+          setShowForm(false);
+        }, 2000);
+        return;
+      } catch (err: any) {
+        setFormError(err.message || 'Failed to update review.');
+        return;
+      }
+    }
+
     try {
       const saved = await reviewApi.submit({
         guestName: finalName,
@@ -194,6 +258,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
         comment: `“${comment.trim()}”`,
         roomBooked,
         avatar: user?.avatar || '',
+        userId: user?.id,
       });
 
       const savedId = String(saved.id);
@@ -283,14 +348,17 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
           <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-[#1F332C] mb-6">
             <div>
               <h3 className="font-serif text-xl font-medium text-stone-900 dark:text-stone-100">
-                Share Your Experience
+                {editingReviewId ? 'Edit Your Review' : 'Share Your Experience'}
               </h3>
               <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-                Tell fellow travelers about your stay at Serene Stay
+                {editingReviewId ? 'Update your feedback for fellow travelers' : 'Tell fellow travelers about your stay at Serene Stay'}
               </p>
             </div>
             <button
-              onClick={() => setShowForm(false)}
+              onClick={() => {
+                setShowForm(false);
+                setEditingReviewId(null);
+              }}
               className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-1 cursor-pointer"
             >
               <X className="w-5 h-5" />
@@ -425,7 +493,10 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowForm(false)}
+                  onClick={() => {
+                    setShowForm(false);
+                    setEditingReviewId(null);
+                  }}
                   className="px-5 py-2.5 border border-stone-300 dark:border-[#2A443B] text-stone-700 dark:text-stone-300 text-xs font-semibold rounded-xl hover:bg-stone-50 dark:hover:bg-[#172A24] cursor-pointer"
                 >
                   Cancel
@@ -434,7 +505,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                   type="submit"
                   className="px-6 py-2.5 bg-[#0D4739] hover:bg-[#083329] text-white text-xs font-semibold rounded-xl shadow-md transition-all cursor-pointer"
                 >
-                  Post Review
+                  {editingReviewId ? 'Save Changes' : 'Post Review'}
                 </button>
               </div>
             </form>
@@ -465,6 +536,25 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
                       <BadgeCheck className="w-3.5 h-3.5" />
                       Your Review
                     </span>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEdit(rev)}
+                        className="p-1 rounded-md text-stone-500 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-stone-100 dark:hover:bg-[#1A2F28] transition-colors cursor-pointer"
+                        title="Edit your review"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMyReview(rev)}
+                        className="p-1 rounded-md text-stone-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        title="Delete your review"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -482,7 +572,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1 mb-1">
-                      {[...Array(rev.rating)].map((_, i) => (
+                      {Array.from({ length: Math.max(1, Math.min(5, Math.round(Number(rev.rating) || 5))) }).map((_, i) => (
                         <Star key={i} className="w-4 h-4 fill-[#E68A00] text-[#E68A00]" />
                       ))}
                     </div>

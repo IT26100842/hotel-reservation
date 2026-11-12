@@ -185,6 +185,12 @@ export function addMyReviewIdToCookie(reviewId: string | number): string[] {
   return current;
 }
 
+export function removeMyReviewIdFromCookie(reviewId: string | number): string[] {
+  const current = getMyReviewIdsFromCookie().filter((id) => id !== String(reviewId));
+  writeStringArrayCookie(MY_REVIEWS_COOKIE_KEY, current);
+  return current;
+}
+
 export function getLikedReviewIdsFromCookie(): string[] {
   return readStringArrayCookie(LIKED_REVIEWS_COOKIE_KEY);
 }

@@ -187,6 +187,11 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
       setStep1Verified(true);
     }
 
+    if (user?.status === 'suspended') {
+      setBookingError('Your account has been suspended by hotel administration. You cannot place reservations. Please visit the front desk to resolve this issue.');
+      return;
+    }
+
     if ((room.availableRooms ?? 5) <= 0 || availableRoomNumbers.length === 0) {
       setBookingError('All rooms in this category are currently booked. No vacant rooms available.');
       return;

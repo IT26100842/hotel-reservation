@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { AdminTab, Booking, Room, UserProfile, AdminStats, PromoCodeItem, Review } from '../types';
-import { roomApi, bookingApi, adminApi, promoApi, reviewApi, authApi } from '../services/api';
+import { AdminTab, Booking, Room, UserProfile, AdminStats, PromoCodeItem, Review, RoomCategoryItem } from '../types';
+import { roomApi, bookingApi, adminApi, promoApi, reviewApi, authApi, categoryApi } from '../services/api';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminHeader } from './AdminHeader';
 import { AdminOverview } from './AdminOverview';
 import { AdminRooms } from './AdminRooms';
+import { AdminCategories } from './AdminCategories';
 import { AdminBookings } from './AdminBookings';
 import { AdminStaff } from './AdminStaff';
 import { AdminGuests } from './AdminGuests';
@@ -40,6 +41,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [promos, setPromos] = useState<PromoCodeItem[]>([]);
+  const [categories, setCategories] = useState<RoomCategoryItem[]>([]);
   const [stats, setStats] = useState<AdminStats>({
     totalRevenue: 0,
     totalBookings: 0,
@@ -56,6 +58,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
   const [loadedTabs, setLoadedTabs] = useState<Record<AdminTab, boolean>>({
     overview: false,
     rooms: false,
+    categories: false,
     bookings: false,
     admins: false,
     guests: false,
@@ -68,6 +71,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
   const [tabLoading, setTabLoading] = useState<Record<AdminTab, boolean>>({
     overview: false,
     rooms: false,
+    categories: false,
     bookings: false,
     admins: false,
     guests: false,
@@ -117,8 +121,9 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
           const needsBookings = force || !loadedTabs.bookings;
           const needsRooms = force || !loadedTabs.rooms;
           const needsAdmins = force || !loadedTabs.admins;
+          const needsCategories = force || !loadedTabs.categories;
 
-          const [statsData, bookingsData, roomsData, adminsData] = await Promise.all([
+          const [statsData, bookingsData, roomsData, adminsData, categoriesData] = await Promise.all([
             adminApi.getStats().catch(() => ({
               totalRevenue: 0,
               totalBookings: 0,
@@ -132,7 +137,8 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
             })),
             needsBookings ? bookingApi.getAll().catch(() => []) : Promise.resolve(null),
             needsRooms ? roomApi.getAll().catch(() => []) : Promise.resolve(null),
-            needsAdmins ? adminApi.getAdmins().catch(() => []) : Promise.resolve(null)
+            needsAdmins ? adminApi.getAdmins().catch(() => []) : Promise.resolve(null),
+            needsCategories ? categoryApi.getAll().catch(() => []) : Promise.resolve(null)
           ]);
 
           if (statsData) setStats(statsData);
@@ -149,14 +155,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
             syncAdminUserWithAdmins(adminsData);
             setLoadedTabs((prev) => ({ ...prev, admins: true }));
           }
+          if (categoriesData !== null) {
+            setCategories(categoriesData);
+            setLoadedTabs((prev) => ({ ...prev, categories: true }));
+          }
           setLoadedTabs((prev) => ({ ...prev, overview: true }));
           break;
         }
 
         case 'rooms': {
-          const roomsData = await roomApi.getAll();
+          const [roomsData, catsData] = await Promise.all([
+            roomApi.getAll(),
+            categoryApi.getAll()
+          ]);
           setRooms(roomsData || []);
-          setLoadedTabs((prev) => ({ ...prev, rooms: true }));
+          if (catsData) setCategories(catsData);
+          setLoadedTabs((prev) => ({ ...prev, rooms: true, categories: true }));
+          break;
+        }
+
+        case 'categories': {
+          const catsData = await categoryApi.getAll();
+          setCategories(catsData || []);
+          setLoadedTabs((prev) => ({ ...prev, categories: true }));
           break;
         }
 
@@ -214,6 +235,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
         const tabTitles: Record<AdminTab, string> = {
           overview: 'Overview',
           rooms: 'Rooms',
+          categories: 'Room Categories',
           bookings: 'Bookings',
           admins: 'Administrators',
           guests: 'Guests',
@@ -239,6 +261,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
   // Lazy load data for the active tab whenever tab changes or admin logs in
   useEffect(() => {
     if (adminUser?.id) {
+      if (currentTab === 'admins' && adminUser.role === 'admin') {
+        setCurrentTab('overview');
+        showToast('Access denied: Standard Administrators do not have access to Staff Management.', 'info');
+        return;
+      }
       loadTabData(currentTab, false);
     }
   }, [currentTab, adminUser?.id]);
@@ -294,8 +321,14 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
     showToast('Admin session signed out successfully', 'info');
   };
 
+  const isStandardAdmin = (adminUser?.role || '').toLowerCase() === 'admin';
+
   // 6. Room CRUD Handlers
   const handleAddRoom = async (roomData: Partial<Room>) => {
+    if (isStandardAdmin) {
+      showToast('Access restricted: Standard Administrators have view-only access.', 'info');
+      throw new Error('Access restricted: Standard Administrators have view-only access.');
+    }
     const created = await roomApi.create(roomData);
     setRooms((prev) => [created, ...prev]);
     setLoadedTabs((prev) => ({ ...prev, overview: false }));
@@ -313,6 +346,25 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
     setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
+  // 6.5. Category Handlers
+  const handleAddCategory = async (catData: Partial<RoomCategoryItem>) => {
+    const created = await categoryApi.create(catData);
+    setCategories((prev) => [...prev, created]);
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
+  };
+
+  const handleUpdateCategory = async (id: number | string, catData: Partial<RoomCategoryItem>) => {
+    const updated = await categoryApi.update(id, catData);
+    setCategories((prev) => prev.map((c) => (String(c.id) === String(id) ? updated : c)));
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
+  };
+
+  const handleDeleteCategory = async (id: number | string) => {
+    await categoryApi.delete(id);
+    setCategories((prev) => prev.filter((c) => String(c.id) !== String(id)));
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
+  };
+
   // 7. Booking Handlers
   const handleUpdateBookingStatus = async (id: string, status: string) => {
     const updated = await bookingApi.updateStatus(id, status);
@@ -320,20 +372,38 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
     setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
+  const handleUpdateBooking = async (id: string, bookingData: any) => {
+    const updated = await bookingApi.update(id, bookingData);
+    setBookings((prev) => prev.map((b) => (b.id === id ? updated : b)));
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
+  };
+
   const handleDeleteBooking = async (id: string) => {
+    if (adminUser?.role === 'admin') {
+      showToast('Permission denied: Standard Administrators cannot delete reservation records.', 'info');
+      return;
+    }
     await bookingApi.delete(id);
     setBookings((prev) => prev.filter((b) => b.id !== id));
     setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
-  // 8. Admin & Staff Handlers
+  // 8. Admin & Staff Handlers (Restricted to Super Admin)
   const handleAddAdmin = async (adminData: { fullName: string; email: string; password?: string; role?: string; phone?: string }) => {
+    if (adminUser?.role !== 'super_admin') {
+      showToast('Permission denied: Only Super Administrators can create staff accounts.', 'info');
+      return;
+    }
     const created = await adminApi.createAdmin(adminData);
     setAdmins((prev) => [...prev, created]);
     setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
   const handleUpdateAdmin = async (id: string, data: Partial<UserProfile> & { password?: string }) => {
+    if (adminUser?.role !== 'super_admin') {
+      showToast('Permission denied: Only Super Administrators can modify administrator accounts.', 'info');
+      return;
+    }
     const updated = await adminApi.updateAdmin(id, data);
     setAdmins((prev) => prev.map((a) => (a.id === id ? updated : a)));
     if (adminUser && adminUser.id === id) {
@@ -344,8 +414,29 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
   };
 
   const handleDeleteAdmin = async (id: string) => {
+    if (adminUser?.role !== 'super_admin') {
+      showToast('Permission denied: Only Super Administrators can remove administrator accounts.', 'info');
+      return;
+    }
     await adminApi.deleteAdmin(id);
     setAdmins((prev) => prev.filter((a) => a.id !== id));
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
+  };
+
+  // 8.1. Guest Handlers
+  const handleUpdateGuest = async (id: string, data: Partial<UserProfile>) => {
+    const updated = await adminApi.updateUser(id, data);
+    setUsers((prev) => prev.map((u) => (u.id === id ? updated : u)));
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
+  };
+
+  const handleDeleteGuest = async (id: string) => {
+    if (adminUser?.role === 'admin') {
+      showToast('Permission denied: Standard Administrators cannot delete guest accounts.', 'info');
+      return;
+    }
+    await adminApi.deleteUser(id);
+    setUsers((prev) => prev.filter((u) => u.id !== id));
     setLoadedTabs((prev) => ({ ...prev, overview: false }));
   };
 
@@ -355,12 +446,23 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
     setPromos((prev) => [...prev, created]);
   };
 
+  const handleUpdatePromo = async (id: number | string, promoData: Partial<PromoCodeItem>) => {
+    const updated = await promoApi.update(id, promoData);
+    setPromos((prev) => prev.map((p) => (p.id === id || p.code === id || p.code === updated.code ? updated : p)));
+  };
+
   const handleDeletePromo = async (id: number | string) => {
     await promoApi.delete(id);
     setPromos((prev) => prev.filter((p) => p.id !== id && p.code !== id));
   };
 
   // 10. Review Handlers
+  const handleUpdateReview = async (id: string, reviewData: Partial<Review>) => {
+    const updated = await reviewApi.update(id, reviewData);
+    setReviews((prev) => prev.map((r) => (r.id === id ? updated : r)));
+    setLoadedTabs((prev) => ({ ...prev, overview: false }));
+  };
+
   const handleDeleteReview = async (id: string) => {
     await reviewApi.delete(id);
     setReviews((prev) => prev.filter((r) => r.id !== id));
@@ -589,6 +691,7 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
               bookings={bookings}
               rooms={rooms}
               admins={admins}
+              currentAdmin={adminUser}
               onNavigateTab={setCurrentTab}
               onOpenAddRoom={() => {
                 setCurrentTab('rooms');
@@ -605,11 +708,28 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
           {currentTab === 'rooms' && (
             <AdminRooms
               rooms={rooms}
+              categories={categories}
+              onManageCategories={() => setCurrentTab('categories')}
               onAddRoom={handleAddRoom}
               onUpdateRoom={handleUpdateRoom}
               onDeleteRoom={handleDeleteRoom}
               onShowToast={showToast}
               isLoading={tabLoading.rooms}
+              currentAdmin={adminUser}
+            />
+          )}
+
+          {currentTab === 'categories' && (
+            <AdminCategories
+              rooms={rooms}
+              isRoomsLoaded={loadedTabs.rooms}
+              categories={categories}
+              onAddCategory={handleAddCategory}
+              onUpdateCategory={handleUpdateCategory}
+              onDeleteCategory={handleDeleteCategory}
+              onShowToast={showToast}
+              isLoading={tabLoading.categories}
+              currentAdmin={adminUser}
             />
           )}
 
@@ -617,8 +737,10 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
             <AdminBookings
               bookings={bookings}
               onUpdateStatus={handleUpdateBookingStatus}
+              onUpdateBooking={handleUpdateBooking}
               onDeleteBooking={handleDeleteBooking}
               onShowToast={showToast}
+              currentAdmin={adminUser}
               isLoading={tabLoading.bookings}
             />
           )}
@@ -641,16 +763,22 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
             <AdminGuests
               users={users}
               bookings={bookings}
+              onUpdateGuest={handleUpdateGuest}
+              onDeleteGuest={handleDeleteGuest}
+              onShowToast={showToast}
               isLoading={tabLoading.guests}
+              currentAdmin={adminUser}
             />
           )}
 
           {currentTab === 'reviews' && (
             <AdminReviews
               reviews={reviews}
+              onUpdateReview={handleUpdateReview}
               onDeleteReview={handleDeleteReview}
               onShowToast={showToast}
               isLoading={tabLoading.reviews}
+              currentAdmin={adminUser}
             />
           )}
 
@@ -658,9 +786,11 @@ export const AdminPortal: React.FC<AdminPortalProps> = ({ onGoToClientSite }) =>
             <AdminPromos
               promos={promos}
               onAddPromo={handleAddPromo}
+              onUpdatePromo={handleUpdatePromo}
               onDeletePromo={handleDeletePromo}
               onShowToast={showToast}
               isLoading={tabLoading.promos}
+              currentAdmin={adminUser}
             />
           )}
 
