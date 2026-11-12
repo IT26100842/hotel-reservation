@@ -6,6 +6,8 @@ import jakarta.persistence.ElementCollection;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 import java.util.ArrayList;
@@ -14,6 +16,12 @@ import java.util.List;
 @Entity
 @Table(name = "rooms")
 public class Room extends BaseEntity {
+
+    @Column(name = "category_id")
+    private Long categoryId = 1L;
+
+    @Column(name = "room_number", length = 20)
+    private String roomNumber;
 
     @Column(nullable = false, length = 150)
     private String name;
@@ -132,6 +140,23 @@ public class Room extends BaseEntity {
         this.images = images;
     }
 
+    @PrePersist
+    @PreUpdate
+    public void prepareRoomDefaults() {
+        if (categoryId == null) {
+            categoryId = 1L;
+        }
+        if ((roomNumber == null || roomNumber.isBlank()) && baseRoomNumber != null) {
+            roomNumber = String.valueOf(baseRoomNumber);
+        }
+        if (totalRooms == null) {
+            totalRooms = 5;
+        }
+        if (currency == null || currency.isBlank()) {
+            currency = "LKR";
+        }
+    }
+
     @Override
     public void validate() {
         if (name == null || name.isBlank()) {
@@ -140,9 +165,12 @@ public class Room extends BaseEntity {
         if (pricePerNight == null || pricePerNight <= 0) {
             throw new IllegalArgumentException("Room price must be greater than zero.");
         }
+        prepareRoomDefaults();
     }
 
     public void updateFrom(Room updated) {
+        if (updated.categoryId != null) this.categoryId = updated.categoryId;
+        if (updated.roomNumber != null) this.roomNumber = updated.roomNumber;
         if (updated.name != null) this.name = updated.name;
         if (updated.slug != null) this.slug = updated.slug;
         if (updated.type != null) this.type = updated.type;
@@ -217,6 +245,12 @@ public class Room extends BaseEntity {
             this.availableRoomNumbers = available;
         }
     }
+
+    public Long getCategoryId() { return categoryId; }
+    public void setCategoryId(Long categoryId) { this.categoryId = categoryId; }
+
+    public String getRoomNumber() { return roomNumber; }
+    public void setRoomNumber(String roomNumber) { this.roomNumber = roomNumber; }
 
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
