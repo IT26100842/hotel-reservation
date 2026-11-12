@@ -7,6 +7,8 @@ public class ReviewRequest {
     private Double rating;
     private String comment;
     private String roomBooked;
+    private Long roomId;
+    private Long userId;
 
     public ReviewRequest() {}
 
@@ -27,4 +29,10 @@ public class ReviewRequest {
 
     public String getRoomBooked() { return roomBooked; }
     public void setRoomBooked(String roomBooked) { this.roomBooked = roomBooked; }
+
+    public Long getRoomId() { return roomId; }
+    public void setRoomId(Long roomId) { this.roomId = roomId; }
+
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
 }
