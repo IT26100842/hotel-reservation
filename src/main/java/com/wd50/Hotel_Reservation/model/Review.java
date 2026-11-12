@@ -37,6 +37,15 @@ public class Review extends BaseEntity {
     @Column(length = 20)
     private String status = "approved";
 
+    @Column(name = "room_id")
+    private Long roomId = 1L;
+
+    @Column(name = "user_id")
+    private Long userId;
+
+    @Column(name = "booking_id")
+    private Long bookingId;
+
     @Column(name = "is_featured")
     private Boolean isFeatured = true;
 
@@ -54,6 +63,12 @@ public class Review extends BaseEntity {
         this.hearts = hearts != null ? hearts : 0;
         this.status = "approved";
         this.isFeatured = true;
+        this.roomId = 1L;
+    }
+
+    public Review(Long roomId, String guestName, String location, String avatar, Double rating, String comment, String date, String roomBooked, Integer likes, Integer hearts) {
+        this(guestName, location, avatar, rating, comment, date, roomBooked, likes, hearts);
+        this.roomId = roomId != null ? roomId : 1L;
     }
 
     @Override
@@ -111,4 +126,13 @@ public class Review extends BaseEntity {
 
     public Boolean getIsFeatured() { return isFeatured; }
     public void setIsFeatured(Boolean isFeatured) { this.isFeatured = isFeatured; }
+
+    public Long getRoomId() { return roomId; }
+    public void setRoomId(Long roomId) { this.roomId = roomId; }
+
+    public Long getUserId() { return userId; }
+    public void setUserId(Long userId) { this.userId = userId; }
+
+    public Long getBookingId() { return bookingId; }
+    public void setBookingId(Long bookingId) { this.bookingId = bookingId; }
 }
