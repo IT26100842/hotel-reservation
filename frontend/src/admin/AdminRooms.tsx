@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Room, RoomType } from '../types';
+import { Room, RoomType, RoomCategoryItem } from '../types';
 import { ALL_AMENITIES } from '../data/mockData';
 import {
   Plus,
@@ -16,31 +16,50 @@ import {
   Eye,
   SlidersHorizontal,
   Wrench,
-  Loader2
+  Loader2,
+  Layers
 } from 'lucide-react';
 
 interface AdminRoomsProps {
   rooms: Room[];
+  categories?: RoomCategoryItem[];
+  onManageCategories?: () => void;
   onAddRoom: (room: Partial<Room>) => Promise<void>;
   onUpdateRoom: (id: string, room: Partial<Room>) => Promise<void>;
   onDeleteRoom: (id: string) => Promise<void>;
   onShowToast: (msg: string, type?: 'success' | 'info') => void;
   isLoading?: boolean;
+  currentAdmin?: any;
 }
 
 export const AdminRooms: React.FC<AdminRoomsProps> = ({
   rooms,
+  categories = [],
+  onManageCategories,
   onAddRoom,
   onUpdateRoom,
   onDeleteRoom,
   onShowToast,
-  isLoading = false
+  isLoading = false,
+  currentAdmin
 }) => {
+  const isStandardAdmin = (currentAdmin?.role || '').toLowerCase() === 'admin';
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | RoomType>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRoom, setEditingRoom] = useState<Room | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Calculate next truly available base room number from existing rooms
+  const getNextAvailableBase = () => {
+    const usedBases = new Set(rooms.map((r) => r.baseRoomNumber).filter(Boolean));
+    const usedNumbers = new Set(rooms.map((r) => r.roomNumber).filter(Boolean));
+    let cand = 101;
+    while (usedBases.has(cand) || usedNumbers.has(String(cand))) {
+      cand += 100;
+    }
+    return cand;
+  };
 
   // Form state
   const [formData, setFormData] = useState<Partial<Room>>({
@@ -68,7 +87,7 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
     popular: true,
     status: 'available',
     totalRooms: 5,
-    baseRoomNumber: 101
+    baseRoomNumber: 501
   });
 
   const [imageInput, setImageInput] = useState('');
@@ -108,6 +127,10 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
     const baseNum = Number(formData.baseRoomNumber);
     if (!formData.baseRoomNumber || isNaN(baseNum) || !Number.isInteger(baseNum) || baseNum < 1 || baseNum > 9999) {
       errs.baseRoomNumber = 'Starting room number must be between 1 and 9999.';
+    } else if (!editingRoom && rooms.some((r) => r.baseRoomNumber === baseNum || r.roomNumber === String(baseNum))) {
+      errs.baseRoomNumber = `Room #${baseNum} is already used. Suggested unique starting number: #${getNextAvailableBase()}.`;
+    } else if (editingRoom && rooms.some((r) => (r.baseRoomNumber === baseNum || r.roomNumber === String(baseNum)) && r.id !== editingRoom.id)) {
+      errs.baseRoomNumber = `Room #${baseNum} is already used by another accommodation.`;
     } else {
       errs.baseRoomNumber = null;
     }
@@ -189,11 +212,11 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
   const openCreateModal = () => {
     setEditingRoom(null);
     setTouched({});
-    const nextBase = (rooms.length + 1) * 100 + 1;
+    const nextBase = getNextAvailableBase();
     setFormData({
       name: '',
       slug: '',
-      type: 'standard',
+      type: categories[0]?.slug || 'standard',
       pricePerNight: 15000,
       currency: 'LKR',
       rating: 5.0,
@@ -215,7 +238,9 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
       popular: true,
       status: 'available',
       totalRooms: 5,
-      baseRoomNumber: nextBase
+      baseRoomNumber: nextBase,
+      roomNumber: String(nextBase),
+      categoryId: categories[0]?.id ? Number(categories[0].id) : undefined
     });
     setImageInput('https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80');
     setModalOpen(true);
@@ -283,7 +308,9 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
         view: formData.view?.trim(),
         cancellationPolicy: formData.cancellationPolicy?.trim(),
         slug: formData.slug?.trim() || (formData.name || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        images: images.length > 0 ? images : ['https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80']
+        images: images.length > 0 ? images : ['https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=1200&q=80'],
+        baseRoomNumber: Number(formData.baseRoomNumber) || undefined,
+        roomNumber: String(formData.baseRoomNumber || getNextAvailableBase())
       };
 
       if (editingRoom) {
@@ -324,6 +351,15 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
 
   return (
     <div className="space-y-6">
+      {isStandardAdmin && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-800 dark:text-amber-300">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <p className="text-xs leading-relaxed">
+            <strong>Standard Administrator Notice:</strong> You have <em>view-only</em> access to hotel accommodations. Adding new rooms, editing specs/pricing, or deleting rooms is restricted to Operations Managers and Super Administrators.
+          </p>
+        </div>
+      )}
+
       {/* 1. Header controls: Search, Filter, Add Room */}
       <div className="p-5 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         {/* Search & Category tabs */}
@@ -340,30 +376,55 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
           </div>
 
           <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0">
-            {(['all', 'standard', 'deluxe', 'suite', 'villa'] as const).map((t) => (
+            <button
+              onClick={() => setTypeFilter('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize whitespace-nowrap transition-colors cursor-pointer ${
+                typeFilter === 'all'
+                  ? 'bg-emerald-700 text-white shadow-sm'
+                  : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-[#162A24]'
+              }`}
+            >
+              All Types
+            </button>
+            {categories.map((c) => (
               <button
-                key={t}
-                onClick={() => setTypeFilter(t)}
+                key={c.id || c.slug}
+                onClick={() => setTypeFilter(c.slug as RoomType)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-semibold capitalize whitespace-nowrap transition-colors cursor-pointer ${
-                  typeFilter === t
+                  typeFilter === c.slug
                     ? 'bg-emerald-700 text-white shadow-sm'
                     : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-[#162A24]'
                 }`}
               >
-                {t === 'all' ? 'All Types' : t}
+                {c.name}
               </button>
             ))}
           </div>
         </div>
 
-        {/* Add Room Button */}
-        <button
-          onClick={openCreateModal}
-          className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-950/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add New Room</span>
-        </button>
+        {/* Action Buttons: Manage Categories & Add Room */}
+        <div className="flex items-center gap-2 shrink-0">
+          {onManageCategories && (
+            <button
+              type="button"
+              onClick={onManageCategories}
+              className="px-3.5 py-2.5 rounded-xl text-xs font-semibold border border-stone-200 dark:border-[#223B33] text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-[#182C25] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Layers className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Categories</span>
+            </button>
+          )}
+
+          {!isStandardAdmin && (
+            <button
+              onClick={openCreateModal}
+              className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow-md shadow-emerald-950/20 flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add New Room</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 2. Room Grid / Loading / Empty */}
@@ -524,21 +585,29 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => openEditModal(room)}
-                    className="px-2.5 py-2 rounded-xl border border-stone-200 dark:border-[#223B33] text-stone-700 dark:text-stone-300 hover:bg-emerald-50 dark:hover:bg-[#162A24] hover:text-emerald-600 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
-                    title="Edit room & room count"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                    <span>Edit / Rooms</span>
-                  </button>
-                  <button
-                    onClick={() => handleDelete(room)}
-                    className="p-2 rounded-xl border border-stone-200 dark:border-[#223B33] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                    title="Delete room"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  {isStandardAdmin ? (
+                    <span className="text-[11px] text-stone-400 italic font-medium px-2 py-1 bg-stone-100 dark:bg-[#13231E] rounded">
+                      View Only (Admin)
+                    </span>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => openEditModal(room)}
+                        className="px-2.5 py-2 rounded-xl border border-stone-200 dark:border-[#223B33] text-stone-700 dark:text-stone-300 hover:bg-emerald-50 dark:hover:bg-[#162A24] hover:text-emerald-600 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
+                        title="Edit room & room count"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span>Edit / Rooms</span>
+                      </button>
+                      <button
+                        onClick={() => handleDelete(room)}
+                        className="p-2 rounded-xl border border-stone-200 dark:border-[#223B33] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                        title="Delete room"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -608,14 +677,23 @@ export const AdminRooms: React.FC<AdminRoomsProps> = ({
                     Category Type *
                   </label>
                   <select
-                    value={formData.type || 'standard'}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value as RoomType })}
+                    value={formData.type || (categories[0]?.slug || 'standard')}
+                    onChange={(e) => {
+                      const selectedSlug = e.target.value;
+                      const matched = categories.find((c) => c.slug === selectedSlug);
+                      setFormData({
+                        ...formData,
+                        type: selectedSlug as RoomType,
+                        categoryId: matched ? Number(matched.id) : undefined
+                      });
+                    }}
                     className="w-full px-3 py-2 rounded-xl bg-stone-50 dark:bg-[#142621] border border-stone-200 dark:border-[#223B33] text-stone-900 dark:text-stone-100 focus:outline-none focus:ring-2 focus:ring-emerald-600 cursor-pointer"
                   >
-                    <option value="standard">Standard</option>
-                    <option value="deluxe">Deluxe</option>
-                    <option value="suite">Suite</option>
-                    <option value="villa">Villa</option>
+                    {categories.map((c) => (
+                      <option key={c.id || c.slug} value={c.slug}>
+                        {c.name} ({c.slug})
+                      </option>
+                    ))}
                   </select>
                 </div>
 

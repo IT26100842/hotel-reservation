@@ -119,15 +119,35 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
   };
 
   const formatYYYYMMDD = (d: Date) => 
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
-  const minDateObj = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const minAllowedDate = formatYYYYMMDD(minDateObj);
+const minDateObj = new Date(Date.now() + 24 * 60 * 60 * 1000);
+const minAllowedDate = formatYYYYMMDD(minDateObj);
 
-  const baseCheckoutDate = new Date(checkIn || minDateObj);
-  baseCheckoutDate.setDate(baseCheckoutDate.getDate() + 1);
-  const minCheckOutDate = formatYYYYMMDD(baseCheckoutDate);
+const baseCheckoutDate = new Date(checkIn || minDateObj);
+baseCheckoutDate.setDate(baseCheckoutDate.getDate() + 1);
+const minCheckOutDate = formatYYYYMMDD(baseCheckoutDate);
 
+const handleCheckInChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const val = e.target.value;
+  if (!val || val >= minAllowedDate) {
+    setCheckIn(val);
+    if (checkOut && val >= checkOut) {
+      const nextDay = new Date(val);
+      nextDay.setDate(nextDay.getDate() + 1);
+      setCheckOut(formatYYYYMMDD(nextDay));
+    }
+  }
+};
+
+const handleCheckOutChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const val = e.target.value;
+  if (!val || val >= minCheckOutDate) {
+    setCheckOut(val);
+  }
+};
+
+  
   return (
     <div className="min-h-screen bg-[#FBFBF9] dark:bg-[#0A1210] py-6 sm:py-10 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto transition-colors duration-300">
       {/* Top Navigation & Breadcrumbs */}
@@ -389,11 +409,11 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
                     type="date"
                     value={checkIn}
                     min={minAllowedDate}
-                    onChange={(e) => setCheckIn(e.target.value)}
-                    className="w-full text-xs sm:text-sm font-semibold text-stone-900 dark:text-stone-100 bg-transparent focus:outline-none cursor-pointer mt-0.5"
+                    onChange={handleCheckInChange}
+                    className="w-full text-xs sm:text-sm font-semibold text-stone-900 dark:text-stone-100 bg-transparent focus:outline-none cursor-pointer mt-0.5 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                   />
                 </div>
-                
+
                 <div className="p-3 bg-stone-50/50 dark:bg-[#172A24]/40">
                   <label className="block text-[10px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
                     Check-out
@@ -402,8 +422,8 @@ export const RoomDetailView: React.FC<RoomDetailViewProps> = ({
                     type="date"
                     value={checkOut}
                     min={minCheckOutDate}
-                    onChange={(e) => setCheckOut(e.target.value)}
-                    className="w-full text-xs sm:text-sm font-semibold text-stone-900 dark:text-stone-100 bg-transparent focus:outline-none cursor-pointer mt-0.5"
+                    onChange={handleCheckOutChange}
+                    className="w-full text-xs sm:text-sm font-semibold text-stone-900 dark:text-stone-100 bg-transparent focus:outline-none cursor-pointer mt-0.5 [&::-webkit-calendar-picker-indicator]:cursor-pointer"
                   />
                 </div>
               </div>

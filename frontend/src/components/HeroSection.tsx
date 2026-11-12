@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, Users, BedDouble, Search, ChevronDown, Sparkles, Check, AlertCircle } from 'lucide-react';
-import { RoomType, SearchFilters } from '../types';
+import { RoomType, SearchFilters, RoomCategoryItem } from '../types';
+import { categoryApi } from '../services/api';
 import { ImageWithFallback } from './ImageWithFallback';
 import { ScrollReveal } from './ScrollReveal';
 import Hero_back_image from '../assets/images/hero_back_image.avif';
@@ -35,6 +36,20 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
   const [adults, setAdults] = useState(2);
   const [roomType, setRoomType] = useState<RoomType>('all');
   const [dateError, setDateError] = useState<string>('');
+  const [categories, setCategories] = useState<RoomCategoryItem[]>([
+    { id: 1, name: 'Standard Room', slug: 'standard' },
+    { id: 2, name: 'Deluxe Oceanfront', slug: 'deluxe' },
+    { id: 3, name: 'Presidential Suite', slug: 'suite' },
+    { id: 4, name: 'Coconut Grove Villa', slug: 'villa' }
+  ]);
+
+  useEffect(() => {
+    categoryApi.getAll().then((data) => {
+      if (Array.isArray(data) && data.length > 0) {
+        setCategories(data);
+      }
+    }).catch((err) => console.warn('Failed to fetch room categories in HeroSection:', err));
+  }, []);
 
   // Check-out must be after the selected check-in date
   const minCheckOutDate = checkIn && checkIn >= minCheckInDate
@@ -118,12 +133,12 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
     });
   };
 
-  const roomTypeLabels: Record<RoomType, string> = {
+  const roomTypeLabels: Record<string, string> = {
     all: 'Any room type',
-    standard: 'Standard Room',
-    deluxe: 'Deluxe Oceanfront',
-    suite: 'Presidential Suite',
-    villa: 'Coconut Grove Villa'
+    ...categories.reduce((acc, cat) => {
+      acc[cat.slug] = cat.name;
+      return acc;
+    }, {} as Record<string, string>)
   };
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
 
@@ -371,22 +386,37 @@ export const HeroSection: React.FC<HeroSectionProps> = ({ onSearch }) => {
 
               {activeDropdown === 'type' && (
                 <div className="absolute left-0 top-full mt-2 z-50 bg-white dark:bg-[#12201C] rounded-2xl shadow-2xl border border-stone-200 dark:border-[#1F332C] p-2.5 w-64 space-y-1">
-                  {(Object.keys(roomTypeLabels) as RoomType[]).map((type) => (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRoomType('all');
+                      setActiveDropdown(null);
+                    }}
+                    className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-xl transition-colors flex items-center justify-between cursor-pointer ${
+                      roomType === 'all'
+                        ? 'bg-[#0D4739] text-white font-semibold'
+                        : 'text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-[#1B2F28]'
+                    }`}
+                  >
+                    <span>Any room type</span>
+                    {roomType === 'all' && <Check className="w-3.5 h-3.5" />}
+                  </button>
+                  {categories.map((cat) => (
                     <button
-                      key={type}
+                      key={cat.id}
                       type="button"
                       onClick={() => {
-                        setRoomType(type);
+                        setRoomType(cat.slug);
                         setActiveDropdown(null);
                       }}
                       className={`w-full text-left px-3 py-2.5 text-xs font-medium rounded-xl transition-colors flex items-center justify-between cursor-pointer ${
-                        roomType === type
+                        roomType === cat.slug
                           ? 'bg-[#0D4739] text-white font-semibold'
                           : 'text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-[#1B2F28]'
                       }`}
                     >
-                      <span>{roomTypeLabels[type]}</span>
-                      {roomType === type && <Check className="w-3.5 h-3.5" />}
+                      <span>{cat.name}</span>
+                      {roomType === cat.slug && <Check className="w-3.5 h-3.5" />}
                     </button>
                   ))}
                 </div>

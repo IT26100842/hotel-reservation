@@ -1,29 +1,36 @@
 import React, { useState } from 'react';
 import { PromoCodeItem } from '../types';
-import { Plus, Trash2, CheckCircle2, X, AlertCircle, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Edit2, CheckCircle2, X, AlertCircle, Loader2 } from 'lucide-react';
 
 interface AdminPromosProps {
   promos: PromoCodeItem[];
   onAddPromo: (promo: Partial<PromoCodeItem>) => Promise<void>;
+  onUpdatePromo?: (id: number | string, promo: Partial<PromoCodeItem>) => Promise<void>;
   onDeletePromo: (id: number | string) => Promise<void>;
   onShowToast: (msg: string, type?: 'success' | 'info') => void;
   isLoading?: boolean;
+  currentAdmin?: any;
 }
 
 export const AdminPromos: React.FC<AdminPromosProps> = ({
   promos,
   onAddPromo,
+  onUpdatePromo,
   onDeletePromo,
   onShowToast,
-  isLoading = false
+  isLoading = false,
+  currentAdmin
 }) => {
+  const isStandardAdmin = (currentAdmin?.role || '').toLowerCase() === 'admin';
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingPromo, setEditingPromo] = useState<PromoCodeItem | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [code, setCode] = useState('');
   const [description, setDescription] = useState('');
   const [discountValue, setDiscountValue] = useState(15);
   const [minSpend, setMinSpend] = useState(15000);
+  const [isActive, setIsActive] = useState(true);
   const [touched, setTouched] = useState({
     code: false,
     discountValue: false,
@@ -39,7 +46,10 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
       if (!/^[A-Z0-9_-]{3,20}$/.test(clean)) {
         return 'Coupon code must be 3–20 uppercase letters or numbers (no spaces).';
       }
-      if (promos.some((p) => p.code.toUpperCase() === clean)) {
+      if (!editingPromo && promos.some((p) => p.code.toUpperCase() === clean)) {
+        return 'This coupon code already exists.';
+      }
+      if (editingPromo && editingPromo.code.toUpperCase() !== clean && promos.some((p) => p.code.toUpperCase() === clean)) {
         return 'This coupon code already exists.';
       }
       return null;
@@ -73,10 +83,23 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
     !promoErrors.description;
 
   const openModal = () => {
+    setEditingPromo(null);
     setCode('');
     setDescription('');
     setDiscountValue(15);
     setMinSpend(15000);
+    setIsActive(true);
+    setTouched({ code: false, discountValue: false, minSpend: false, description: false });
+    setModalOpen(true);
+  };
+
+  const openEditModal = (p: PromoCodeItem) => {
+    setEditingPromo(p);
+    setCode(p.code);
+    setDescription(p.description || '');
+    setDiscountValue(p.discountValue);
+    setMinSpend(p.minSpend || 0);
+    setIsActive(p.isActive !== false);
     setTouched({ code: false, discountValue: false, minSpend: false, description: false });
     setModalOpen(true);
   };
@@ -97,20 +120,35 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
 
     setIsSubmitting(true);
     try {
-      await onAddPromo({
-        code: code.trim().toUpperCase(),
-        description: description.trim(),
-        discountType: 'percentage',
-        discountValue,
-        minSpend,
-        isActive: true
-      });
-      onShowToast(`Promo code "${code.trim().toUpperCase()}" created!`);
+      if (editingPromo) {
+        if (onUpdatePromo) {
+          await onUpdatePromo(editingPromo.id || editingPromo.code, {
+            code: code.trim().toUpperCase(),
+            description: description.trim(),
+            discountType: 'percentage',
+            discountValue,
+            minSpend,
+            isActive
+          });
+        }
+        onShowToast(`Promo code "${code.trim().toUpperCase()}" updated!`);
+      } else {
+        await onAddPromo({
+          code: code.trim().toUpperCase(),
+          description: description.trim(),
+          discountType: 'percentage',
+          discountValue,
+          minSpend,
+          isActive: true
+        });
+        onShowToast(`Promo code "${code.trim().toUpperCase()}" created!`);
+      }
       setModalOpen(false);
+      setEditingPromo(null);
       setCode('');
       setDescription('');
     } catch (err: any) {
-      onShowToast(`Failed to create promo: ${err.message}`, 'info');
+      onShowToast(`Failed to save promo: ${err.message}`, 'info');
     } finally {
       setIsSubmitting(false);
     }
@@ -129,6 +167,15 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
 
   return (
     <div className="space-y-6">
+      {isStandardAdmin && (
+        <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-amber-800 dark:text-amber-300">
+          <AlertCircle className="w-5 h-5 shrink-0" />
+          <p className="text-xs leading-relaxed">
+            <strong>Standard Administrator Notice:</strong> You have <em>view-only</em> access to promotional coupon codes. Creating, editing, or deleting promo codes is restricted to Operations Managers and Super Administrators.
+          </p>
+        </div>
+      )}
+
       {/* Top Header */}
       <div className="p-5 rounded-2xl bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] shadow-sm flex items-center justify-between">
         <div>
@@ -140,13 +187,15 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={openModal}
-          className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" />
-          <span>New Promo Code</span>
-        </button>
+        {!isStandardAdmin && (
+          <button
+            onClick={openModal}
+            className="px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl text-xs font-semibold shadow-md flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" />
+            <span>New Promo Code</span>
+          </button>
+        )}
       </div>
 
       {/* Promos Cards Grid / Loading / Empty */}
@@ -196,29 +245,44 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
             <div className="mt-4 pt-3 border-t border-stone-100 dark:border-[#1C2F29] flex items-center justify-between text-xs">
               <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Active</span>
+                <span>{p.isActive !== false ? 'Active' : 'Inactive'}</span>
               </span>
 
-              <button
-                onClick={() => handleDelete(p)}
-                className="p-1.5 rounded-lg border border-stone-200 dark:border-[#223B33] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                title="Delete promo code"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-1.5">
+                {isStandardAdmin ? (
+                  <span className="text-[10px] text-stone-400 italic">View Only</span>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => openEditModal(p)}
+                      className="p-1.5 rounded-lg border border-stone-200 dark:border-[#223B33] text-stone-600 dark:text-stone-300 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
+                      title="Edit promo code"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleDelete(p)}
+                      className="p-1.5 rounded-lg border border-stone-200 dark:border-[#223B33] text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                      title="Delete promo code"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         ))}
       </div>
       )}
 
-      {/* Create Promo Modal */}
+      {/* Create / Edit Promo Modal */}
       {modalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white dark:bg-[#101F1A] border border-stone-200 dark:border-[#1C2F29] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
             <div className="p-5 border-b border-stone-200 dark:border-[#1C2F29] flex items-center justify-between bg-stone-50 dark:bg-[#142621]">
               <h3 className="font-serif text-lg font-bold text-stone-900 dark:text-stone-100">
-                Create Promo Code
+                {editingPromo ? 'Edit Promo Code' : 'Create Promo Code'}
               </h3>
               <button
                 onClick={() => setModalOpen(false)}
@@ -339,6 +403,19 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
                 )}
               </div>
 
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="promoIsActive"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
+                  className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500"
+                />
+                <label htmlFor="promoIsActive" className="text-stone-700 dark:text-stone-300 font-medium">
+                  Active (Coupon enabled at checkout)
+                </label>
+              </div>
+
               <div className="pt-3 border-t border-stone-200 dark:border-[#1C2F29] flex items-center justify-end gap-3">
                 <button
                   type="button"
@@ -356,7 +433,7 @@ export const AdminPromos: React.FC<AdminPromosProps> = ({
                       : 'bg-stone-200 dark:bg-stone-800 text-stone-400 dark:text-stone-500 cursor-not-allowed shadow-none'
                   }`}
                 >
-                  {isSubmitting ? 'Saving...' : 'Deploy Coupon'}
+                  {isSubmitting ? 'Saving...' : editingPromo ? 'Save Changes' : 'Deploy Coupon'}
                 </button>
               </div>
             </form>

@@ -1,5 +1,6 @@
-import { Room, Booking, Review, UserProfile, SearchFilters, PaymentMethodType } from '../types';
+import { Room, Booking, Review, UserProfile, SearchFilters, PaymentMethodType, RoomCategoryItem } from '../types';
 import { INITIAL_ROOMS, INITIAL_BOOKINGS, INITIAL_REVIEWS, INITIAL_USER } from '../data/mockData';
+import { loadAdminSession } from '../utils/cookies';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -8,8 +9,17 @@ const BASE_URL = import.meta.env.VITE_API_URL || '/api';
  */
 async function apiFetch<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const url = `${BASE_URL}${endpoint}`;
+  const adminSession = loadAdminSession();
+  const authHeaders: Record<string, string> = {};
+  if (adminSession) {
+    if (adminSession.role) authHeaders['X-Admin-Role'] = adminSession.role;
+    if (adminSession.id) authHeaders['X-Admin-Id'] = String(adminSession.id).replace(/\D/g, '');
+    if (adminSession.email) authHeaders['X-Admin-Email'] = adminSession.email;
+  }
+
   const headers = {
     'Content-Type': 'application/json',
+    ...authHeaders,
     ...(options?.headers || {})
   };
 
@@ -88,8 +98,10 @@ export const roomApi = {
       bedType: room.bedType || 'King Bed',
       view: room.view || 'Ocean View',
       status: room.status || 'available',
+      categoryId: room.categoryId ? Number(room.categoryId) : undefined,
+      roomNumber: room.roomNumber || undefined,
       totalRooms: room.totalRooms && room.totalRooms > 0 ? Number(room.totalRooms) : 5,
-      baseRoomNumber: room.baseRoomNumber && room.baseRoomNumber > 0 ? Number(room.baseRoomNumber) : 101
+      baseRoomNumber: room.baseRoomNumber && room.baseRoomNumber > 0 ? Number(room.baseRoomNumber) : undefined
     };
     const created = await apiFetch<any>('/rooms', {
       method: 'POST',
@@ -100,12 +112,16 @@ export const roomApi = {
 
   async update(id: string, room: Partial<Room>): Promise<Room> {
     const numericId = id.replace('room-', '');
+    // Strip frontend-only fields that must not be sent to backend (id is "room-X" string, etc.)
+    const { id: _id, availableRooms, occupiedRooms, roomNumbers, occupiedRoomNumbers, ...rest } = room as any;
     const updated = await apiFetch<any>(`/rooms/${numericId}`, {
       method: 'PUT',
       body: JSON.stringify({
-        ...room,
-        totalRooms: room.totalRooms ? Number(room.totalRooms) : undefined,
-        baseRoomNumber: room.baseRoomNumber ? Number(room.baseRoomNumber) : undefined
+        ...rest,
+        categoryId: rest.categoryId ? Number(rest.categoryId) : undefined,
+        roomNumber: rest.roomNumber || undefined,
+        totalRooms: rest.totalRooms ? Number(rest.totalRooms) : undefined,
+        baseRoomNumber: rest.baseRoomNumber ? Number(rest.baseRoomNumber) : undefined
       })
     });
     return normalizeRoom(updated);
@@ -150,12 +166,16 @@ export interface CreateBookingPayload {
 
 export const bookingApi = {
   async create(payload: CreateBookingPayload): Promise<Booking> {
+    const rawUid = payload.userId ? String(payload.userId).replace(/^(usr-|user-)/i, '') : '';
+    const parsedUid = Number(rawUid);
+    const validUid = !isNaN(parsedUid) && parsedUid > 0 ? parsedUid : null;
+
     const created = await apiFetch<any>('/bookings', {
       method: 'POST',
       body: JSON.stringify({
         roomId: payload.roomId.replace('room-', ''),
         roomNumber: payload.roomNumber,
-        userId: payload.userId ? Number(String(payload.userId).replace('usr-', '')) : null,
+        userId: validUid,
         checkIn: payload.checkIn,
         checkOut: payload.checkOut,
         nights: payload.nights,
@@ -234,6 +254,39 @@ export const bookingApi = {
     const updated = await apiFetch<any>(`/bookings/${numericId}/status`, {
       method: 'PUT',
       body: JSON.stringify({ status })
+    });
+    return normalizeBooking(updated);
+  },
+
+  async update(bookingId: string, payload: Partial<CreateBookingPayload> & { status?: string }): Promise<Booking> {
+    const numericId = bookingId.replace('bk-', '');
+    const body: any = {};
+    if (payload.roomId) body.roomId = payload.roomId.replace('room-', '');
+    if (payload.roomNumber !== undefined) body.roomNumber = payload.roomNumber;
+    if (payload.userId !== undefined) {
+      const rawUid = payload.userId ? String(payload.userId).replace(/^(usr-|user-)/i, '') : '';
+      const parsedUid = Number(rawUid);
+      body.userId = !isNaN(parsedUid) && parsedUid > 0 ? parsedUid : null;
+    }
+    if (payload.checkIn) body.checkIn = payload.checkIn;
+    if (payload.checkOut) body.checkOut = payload.checkOut;
+    if (payload.nights !== undefined) body.nights = payload.nights;
+    if (payload.adults !== undefined) body.adults = payload.adults;
+    if (payload.children !== undefined) body.children = payload.children;
+    if (payload.guestInfo) body.guestInfo = payload.guestInfo;
+    if (payload.paymentMethod) body.paymentMethod = payload.paymentMethod;
+    if (payload.status) body.status = payload.status;
+    if (payload.subtotal !== undefined) body.subtotal = payload.subtotal;
+    if (payload.serviceCharge !== undefined) body.serviceCharge = payload.serviceCharge;
+    if (payload.taxes !== undefined) body.taxes = payload.taxes;
+    if (payload.discountAmount !== undefined) body.discountAmount = payload.discountAmount;
+    if (payload.totalAmount !== undefined) body.totalAmount = payload.totalAmount;
+    if (payload.promoCodeApplied !== undefined) body.promoCodeApplied = payload.promoCodeApplied;
+    if (payload.currency) body.currency = payload.currency;
+
+    const updated = await apiFetch<any>(`/bookings/${numericId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
     });
     return normalizeBooking(updated);
   },
@@ -349,6 +402,45 @@ export const authApi = {
       console.warn('API toggleSavedRoom failed:', err);
       throw err;
     }
+  },
+
+  async validateSession(userId?: string, email?: string): Promise<{
+    valid: boolean;
+    reason?: 'suspended' | 'deleted' | string;
+    status?: string;
+    message?: string;
+    user?: UserProfile;
+  }> {
+    try {
+      const params = new URLSearchParams();
+      if (userId) params.append('id', String(userId).replace(/\D/g, ''));
+      if (email) params.append('email', email.trim().toLowerCase());
+
+      const res = await apiFetch<any>(`/auth/validate-session?${params.toString()}`);
+      return {
+        valid: Boolean(res.valid),
+        status: res.status || 'active',
+        user: res.user ? normalizeUser(res.user) : undefined
+      };
+    } catch (err: any) {
+      const msg = err.message || '';
+      if (msg.includes('suspended') || msg.includes('403')) {
+        return {
+          valid: false,
+          reason: 'suspended',
+          status: 'suspended',
+          message: 'Your account has been suspended by hotel administration. Please visit the hotel front desk or reception to reactivate your account privileges.'
+        };
+      }
+      if (msg.includes('no longer exists') || msg.includes('404') || msg.includes('not found')) {
+        return {
+          valid: false,
+          reason: 'deleted',
+          message: 'Your account no longer exists in our system.'
+        };
+      }
+      return { valid: true };
+    }
   }
 };
 
@@ -387,39 +479,30 @@ export const reviewApi = {
     rating: number;
     comment: string;
     roomBooked?: string;
+    roomId?: number | string;
+    userId?: number | string;
   }): Promise<Review> {
-    try {
-      const created = await apiFetch<any>('/reviews', {
-        method: 'POST',
-        body: JSON.stringify(review)
-      });
-      return {
-        id: String(created.id),
-        guestName: created.guestName,
-        location: created.location || '',
-        avatar: created.avatar || '',
-        rating: created.rating,
-        comment: created.comment,
-        date: created.date || 'Just now',
-        roomBooked: created.roomBooked || 'Deluxe Oceanfront',
-        likes: typeof created.likes === 'number' ? created.likes : 0,
-        hearts: typeof created.hearts === 'number' ? created.hearts : 0
-      };
-    } catch (err) {
-      console.warn('API submit review failed, creating locally:', err);
-      return {
-        id: 'rev-' + Date.now(),
-        guestName: review.guestName,
-        location: review.location || '',
-        avatar: review.avatar || '',
-        rating: review.rating,
-        comment: `“${review.comment.trim()}”`,
-        date: 'Just now',
-        roomBooked: review.roomBooked || 'Deluxe Oceanfront',
-        likes: 0,
-        hearts: 0
-      };
-    }
+    const payload = {
+      ...review,
+      roomId: review.roomId ? Number(String(review.roomId).replace('room-', '')) : undefined,
+      userId: review.userId ? Number(String(review.userId).replace('user-', '')) : undefined
+    };
+    const created = await apiFetch<any>('/reviews', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+    return {
+      id: String(created.id),
+      guestName: created.guestName,
+      location: created.location || '',
+      avatar: created.avatar || '',
+      rating: created.rating,
+      comment: created.comment,
+      date: created.date || 'Just now',
+      roomBooked: created.roomBooked || 'Deluxe Oceanfront',
+      likes: typeof created.likes === 'number' ? created.likes : 0,
+      hearts: typeof created.hearts === 'number' ? created.hearts : 0
+    };
   },
 
   async toggleLike(reviewId: string, increment: boolean = true): Promise<Review | null> {
@@ -478,6 +561,26 @@ export const reviewApi = {
     }
   },
 
+  async update(reviewId: string, review: Partial<Review>): Promise<Review> {
+    const numId = reviewId.replace('rev-', '');
+    const updated = await apiFetch<any>(`/reviews/${numId}`, {
+      method: 'PUT',
+      body: JSON.stringify(review)
+    });
+    return {
+      id: String(updated.id),
+      guestName: updated.guestName,
+      location: updated.location || '',
+      avatar: updated.avatar || '',
+      rating: updated.rating || 5,
+      comment: updated.comment,
+      date: updated.date || 'Recently',
+      roomBooked: updated.roomBooked || 'Deluxe Oceanfront',
+      likes: typeof updated.likes === 'number' ? updated.likes : 0,
+      hearts: typeof updated.hearts === 'number' ? updated.hearts : 0
+    };
+  },
+
   async delete(reviewId: string): Promise<void> {
     const numId = reviewId.replace('rev-', '');
     await apiFetch(`/reviews/${numId}`, { method: 'DELETE' });
@@ -505,8 +608,17 @@ export const promoApi = {
     });
   },
 
+  async update(id: number | string, promo: any): Promise<any> {
+    const cleanId = String(id).replace('promo-', '');
+    return await apiFetch<any>(`/promos/${cleanId}`, {
+      method: 'PUT',
+      body: JSON.stringify(promo)
+    });
+  },
+
   async delete(id: number | string): Promise<void> {
-    await apiFetch(`/promos/${id}`, { method: 'DELETE' });
+    const cleanId = String(id).replace('promo-', '');
+    await apiFetch(`/promos/${cleanId}`, { method: 'DELETE' });
   },
 
   async validate(code: string, subtotal: number): Promise<{
@@ -534,6 +646,64 @@ export const promoApi = {
       if (clean === 'CEYLON20') return { valid: true, discountRate: 0.20, discountAmount: Math.round(subtotal * 0.20) };
       return { valid: false, discountRate: 0, discountAmount: 0, message: 'Invalid promo code.' };
     }
+  }
+};
+
+// ----------------------------------------------------
+// Room Category API
+// ----------------------------------------------------
+export const categoryApi = {
+  async getAll(): Promise<RoomCategoryItem[]> {
+    try {
+      const data = await apiFetch<any[]>('/categories');
+      if (Array.isArray(data) && data.length > 0) {
+        return data.map((c) => ({
+          id: c.id,
+          name: c.name,
+          slug: c.slug,
+          shortDescription: c.shortDescription || '',
+          basePrice: typeof c.basePrice === 'number' ? c.basePrice : 0,
+          sortOrder: typeof c.sortOrder === 'number' ? c.sortOrder : 0,
+          isActive: c.isActive !== false
+        }));
+      }
+      return [
+        { id: 1, name: 'Standard Room', slug: 'standard', basePrice: 12500, sortOrder: 1, isActive: true },
+        { id: 2, name: 'Deluxe Oceanfront', slug: 'deluxe', basePrice: 18000, sortOrder: 2, isActive: true },
+        { id: 3, name: 'Presidential Suite', slug: 'suite', basePrice: 32000, sortOrder: 3, isActive: true },
+        { id: 4, name: 'Coconut Grove Villa', slug: 'villa', basePrice: 45000, sortOrder: 4, isActive: true }
+      ];
+    } catch (err) {
+      console.warn('API /categories failed:', err);
+      return [
+        { id: 1, name: 'Standard Room', slug: 'standard', basePrice: 12500, sortOrder: 1, isActive: true },
+        { id: 2, name: 'Deluxe Oceanfront', slug: 'deluxe', basePrice: 18000, sortOrder: 2, isActive: true },
+        { id: 3, name: 'Presidential Suite', slug: 'suite', basePrice: 32000, sortOrder: 3, isActive: true },
+        { id: 4, name: 'Coconut Grove Villa', slug: 'villa', basePrice: 45000, sortOrder: 4, isActive: true }
+      ];
+    }
+  },
+
+  async create(category: Partial<RoomCategoryItem>): Promise<RoomCategoryItem> {
+    return await apiFetch<RoomCategoryItem>('/categories', {
+      method: 'POST',
+      body: JSON.stringify(category)
+    });
+  },
+
+  async update(id: number | string, category: Partial<RoomCategoryItem>): Promise<RoomCategoryItem> {
+    const cleanId = String(id).replace('cat-', '');
+    return await apiFetch<RoomCategoryItem>(`/categories/${cleanId}`, {
+      method: 'PUT',
+      body: JSON.stringify(category)
+    });
+  },
+
+  async delete(id: number | string): Promise<void> {
+    const cleanId = String(id).replace('cat-', '');
+    await apiFetch(`/categories/${cleanId}`, {
+      method: 'DELETE'
+    });
   }
 };
 
@@ -608,6 +778,22 @@ export const adminApi = {
     await apiFetch(`/admin/admins/${numericId}`, {
       method: 'DELETE'
     });
+  },
+
+  async updateUser(id: string, data: Partial<UserProfile>): Promise<UserProfile> {
+    const numericId = id.replace('usr-', '');
+    const updated = await apiFetch<any>(`/admin/users/${numericId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data)
+    });
+    return normalizeUser(updated);
+  },
+
+  async deleteUser(id: string): Promise<void> {
+    const numericId = id.replace('usr-', '');
+    await apiFetch(`/admin/users/${numericId}`, {
+      method: 'DELETE'
+    });
   }
 };
 
@@ -648,6 +834,8 @@ function normalizeRoom(r: any): Room {
     bedType: r.bedType || 'King Bed',
     view: r.view || 'Ocean View',
     status: r.status || 'available',
+    categoryId: r.categoryId,
+    roomNumber: r.roomNumber,
     totalRooms,
     baseRoomNumber,
     occupiedRooms,
