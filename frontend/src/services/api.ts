@@ -454,6 +454,7 @@ export const reviewApi = {
       if (Array.isArray(data)) {
         return data.map((r) => ({
           id: String(r.id),
+          createdAt: r.createdAt,
           guestName: r.guestName,
           location: r.location || '',
           avatar: r.avatar || '',

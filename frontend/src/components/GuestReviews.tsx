@@ -4,9 +4,9 @@ import { Review, UserProfile } from '../types';
 import { reviewApi } from '../services/api';
 import { 
   Star, Heart, ThumbsUp, MessageSquarePlus, Check, User, X, 
-  AlertCircle, BadgeCheck, ChevronLeft, ChevronRight, Edit2, Trash2
+  AlertCircle, BadgeCheck, ChevronLeft, ChevronRight, Edit2, Trash2, Loader2
 } from 'lucide-react';
-import { ScrollReveal, StaggerContainer, StaggerItem } from './ScrollReveal';
+import { ScrollReveal } from './ScrollReveal';
 import { getAvatarUrl, NO_DP_AVATAR } from '../utils/avatar';
 import {
   getMyReviewIdsFromCookie,
@@ -29,16 +29,46 @@ interface ReviewWithReactions extends Review {
   hearts: number;
   userReactedLike?: boolean;
   userReactedHeart?: boolean;
+  createdAt?: string;
 }
+
+const formatRelativeTime = (createdAt?: string, fallbackDate?: string): string => {
+  if (!createdAt) return fallbackDate || 'Just now';
+  const date = new Date(createdAt);
+  if (isNaN(date.getTime())) return fallbackDate || 'Just now';
+
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+  if (diffInSeconds < 60) return 'Just now';
+
+  const diffInMinutes = Math.floor(diffInSeconds / 60);
+  if (diffInMinutes < 60) return `${diffInMinutes} minute${diffInMinutes > 1 ? 's' : ''} ago`;
+
+  const diffInHours = Math.floor(diffInMinutes / 60);
+  if (diffInHours < 24) return `${diffInHours} hour${diffInHours > 1 ? 's' : ''} ago`;
+
+  const diffInDays = Math.floor(diffInHours / 24);
+  if (diffInDays < 7) return `${diffInDays} day${diffInDays > 1 ? 's' : ''} ago`;
+
+  const diffInWeeks = Math.floor(diffInDays / 7);
+  if (diffInDays < 30) return `${diffInWeeks} week${diffInWeeks > 1 ? 's' : ''} ago`;
+
+  const diffInMonths = Math.floor(diffInDays / 30);
+  if (diffInMonths < 12) return `${diffInMonths} month${diffInMonths > 1 ? 's' : ''} ago`;
+
+  const diffInYears = Math.floor(diffInDays / 365);
+  return `${diffInYears} year${diffInYears > 1 ? 's' : ''} ago`;
+};
 
 export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
   const [myReviewIds, setMyReviewIds] = useState<string[]>(() => getMyReviewIdsFromCookie());
   const [reviewsList, setReviewsList] = useState<ReviewWithReactions[]>(() => {
     const likedIds = getLikedReviewIdsFromCookie();
     const heartedIds = getHeartedReviewIdsFromCookie();
-    // Load all INITIAL_REVIEWS at first, we will slice them during render
     return INITIAL_REVIEWS.map((r) => ({
       ...r,
+      createdAt: (r as any).createdAt,
       likes: typeof r.likes === 'number' ? r.likes : 0,
       hearts: typeof r.hearts === 'number' ? r.hearts : 0,
       userReactedLike: likedIds.includes(String(r.id)),
@@ -46,10 +76,9 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
     }));
   });
 
-  // Carousel State
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
 
-  // Load reviews from MySQL backend API on mount
   useEffect(() => {
     const likedIds = getLikedReviewIdsFromCookie();
     const heartedIds = getHeartedReviewIdsFromCookie();
@@ -63,6 +92,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
             return {
               ...r,
               id: rid,
+              createdAt: (r as any).createdAt,
               likes: typeof r.likes === 'number' ? r.likes : 0,
               hearts: typeof r.hearts === 'number' ? r.hearts : 0,
               userReactedLike: likedIds.includes(rid),
@@ -75,14 +105,13 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
   }, []);
 
   useEffect(() => {
-    if (reviewsList.length <= 3) return;
+    if (reviewsList.length <= 3 || isHovered) return;
     const timer = setInterval(() => {
       setCurrentIndex((prev) => (prev + 1) % reviewsList.length);
     }, 4000);
     return () => clearInterval(timer);
-  }, [reviewsList.length]);
+  }, [reviewsList.length, isHovered]);
 
-  // Review Form States
   const [showForm, setShowForm] = useState(false);
   const [editingReviewId, setEditingReviewId] = useState<string | null>(null);
   const [guestName, setGuestName] = useState('');
@@ -91,9 +120,9 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
   const [comment, setComment] = useState('');
   const [roomBooked, setRoomBooked] = useState('Deluxe Oceanfront');
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Toggle reactions & persist to MySQL database + cookies
   const handleToggleLike = async (id: string) => {
     const target = reviewsList.find((r) => r.id === id);
     if (!target) return;
@@ -199,6 +228,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
 
   const handleSubmitReview = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setFormError(null);
 
     const finalName = user?.fullName ? user.fullName.trim() : guestName.trim();
@@ -213,6 +243,8 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
       setFormError('Please enter your review comment.');
       return;
     }
+
+    setIsSubmitting(true);
 
     if (editingReviewId) {
       try {
@@ -239,6 +271,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
         setEditingReviewId(null);
         setComment('');
         setGuestName('');
+        setIsSubmitting(false);
         setSubmitSuccess(true);
         setTimeout(() => {
           setSubmitSuccess(false);
@@ -247,6 +280,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
         return;
       } catch (err: any) {
         setFormError(err.message || 'Failed to update review.');
+        setIsSubmitting(false);
         return;
       }
     }
@@ -268,6 +302,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
       const newReview: ReviewWithReactions = {
         ...saved,
         id: savedId,
+        createdAt: (saved as any).createdAt || new Date().toISOString(),
         likes: 0,
         hearts: 0,
         userReactedLike: false,
@@ -289,6 +324,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
         rating,
         comment: `“${comment.trim()}”`,
         date: 'Just now',
+        createdAt: new Date().toISOString(),
         roomBooked,
         likes: 0,
         hearts: 0,
@@ -299,6 +335,7 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
       setCurrentIndex(0); 
     }
 
+    setIsSubmitting(false);
     setComment('');
     setGuestName('');
     setSubmitSuccess(true);
@@ -493,19 +530,28 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
               <div className="flex items-center justify-end gap-3 pt-2">
                 <button
                   type="button"
+                  disabled={isSubmitting}
                   onClick={() => {
                     setShowForm(false);
                     setEditingReviewId(null);
                   }}
-                  className="px-5 py-2.5 border border-stone-300 dark:border-[#2A443B] text-stone-700 dark:text-stone-300 text-xs font-semibold rounded-xl hover:bg-stone-50 dark:hover:bg-[#172A24] cursor-pointer"
+                  className="px-5 py-2.5 border border-stone-300 dark:border-[#2A443B] text-stone-700 dark:text-stone-300 text-xs font-semibold rounded-xl hover:bg-stone-50 dark:hover:bg-[#172A24] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-6 py-2.5 bg-[#0D4739] hover:bg-[#083329] text-white text-xs font-semibold rounded-xl shadow-md transition-all cursor-pointer"
+                  disabled={isSubmitting}
+                  className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-[#0D4739] hover:bg-[#083329] text-white text-xs font-semibold rounded-xl shadow-md transition-all cursor-pointer disabled:opacity-70 disabled:cursor-not-allowed"
                 >
-                  {editingReviewId ? 'Save Changes' : 'Post Review'}
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>{editingReviewId ? 'Saving...' : 'Posting...'}</span>
+                    </>
+                  ) : (
+                    <span>{editingReviewId ? 'Save Changes' : 'Post Review'}</span>
+                  )}
                 </button>
               </div>
             </form>
@@ -513,151 +559,152 @@ export const GuestReviews: React.FC<GuestReviewsProps> = ({ user }) => {
         </div>
       )}
 
-      <StaggerContainer
-        key={`${currentIndex}-${reviewsList.length}`}
-        staggerDelay={0.16}
-        className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 min-h-[300px]"
+      <div
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
       >
-        {visibleReviews.map((rev) => {
-          const isMyReview = myReviewIds.includes(String(rev.id));
-          return (
-          <StaggerItem key={rev.id} animation="fade-up">
-            <div
-              className={`bg-white dark:bg-[#101C18] rounded-2xl p-6 sm:p-7 shadow-sm border transition-all duration-300 flex flex-col justify-between h-full transform-gpu ${
-                isMyReview
-                  ? 'border-[#0D4739] dark:border-[#C2A26F] ring-1 ring-[#0D4739]/20 dark:ring-[#C2A26F]/25 shadow-md'
-                  : 'border-stone-200/80 dark:border-[#1F332C] hover:shadow-md'
-              }`}
-            >
-              <div>
-                {isMyReview && (
-                  <div className="mb-3 flex items-center justify-between">
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#0D4739]/10 dark:bg-[#C2A26F]/15 text-[#0D4739] dark:text-[#C2A26F] border border-[#0D4739]/25 dark:border-[#C2A26F]/30">
-                      <BadgeCheck className="w-3.5 h-3.5" />
-                      Your Review
-                    </span>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 min-h-[300px]">
+          {visibleReviews.map((rev) => {
+            const isMyReview = myReviewIds.includes(String(rev.id));
+            console.log(rev)
+            return (
+              <div
+                key={rev.id}
+                className={`bg-white dark:bg-[#101C18] rounded-2xl p-6 sm:p-7 shadow-sm border transition-all duration-300 flex flex-col justify-between h-full ${
+                  isMyReview
+                    ? 'border-[#0D4739] dark:border-[#C2A26F] ring-1 ring-[#0D4739]/20 dark:ring-[#C2A26F]/25 shadow-md'
+                    : 'border-stone-200/80 dark:border-[#1F332C] hover:shadow-md'
+                }`}
+              >
+                <div>
+                  {isMyReview && (
+                    <div className="mb-3 flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider bg-[#0D4739]/10 dark:bg-[#C2A26F]/15 text-[#0D4739] dark:text-[#C2A26F] border border-[#0D4739]/25 dark:border-[#C2A26F]/30">
+                        <BadgeCheck className="w-3.5 h-3.5" />
+                        Your Review
+                      </span>
 
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleStartEdit(rev)}
-                        className="p-1 rounded-md text-stone-500 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-stone-100 dark:hover:bg-[#1A2F28] transition-colors cursor-pointer"
-                        title="Edit your review"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteMyReview(rev)}
-                        className="p-1 rounded-md text-stone-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
-                        title="Delete your review"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleStartEdit(rev)}
+                          className="p-1 rounded-md text-stone-500 hover:text-emerald-700 dark:hover:text-emerald-400 hover:bg-stone-100 dark:hover:bg-[#1A2F28] transition-colors cursor-pointer"
+                          title="Edit your review"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMyReview(rev)}
+                          className="p-1 rounded-md text-stone-500 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition-colors cursor-pointer"
+                          title="Delete your review"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                <div className="flex items-start gap-4 mb-4">
-                  <div className="shrink-0">
-                    <img
-                      src={getAvatarUrl(rev.avatar)}
-                      alt={rev.guestName}
-                      onError={(e) => {
-                        e.currentTarget.src = NO_DP_AVATAR;
-                      }}
-                      className="w-14 h-14 rounded-full object-cover border border-stone-200 dark:border-[#1F332C] shadow-sm bg-stone-800"
-                    />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1 mb-1">
-                      {Array.from({ length: Math.max(1, Math.min(5, Math.round(Number(rev.rating) || 5))) }).map((_, i) => (
-                        <Star key={i} className="w-4 h-4 fill-[#E68A00] text-[#E68A00]" />
-                      ))}
+                  <div className="flex items-start gap-4 mb-4">
+                    <div className="shrink-0">
+                      <img
+                        src={getAvatarUrl(rev.avatar)}
+                        alt={rev.guestName}
+                        onError={(e) => {
+                          e.currentTarget.src = NO_DP_AVATAR;
+                        }}
+                        className="w-14 h-14 rounded-full object-cover border border-stone-200 dark:border-[#1F332C] shadow-sm bg-stone-800"
+                      />
                     </div>
 
-                    <p className="text-sm font-semibold text-[#1A1F1D] dark:text-[#F5F5F0] truncate">
-                      {rev.guestName}
-                    </p>
-                    <p className="text-[11px] text-stone-400 dark:text-stone-500 mt-0.5">
-                      {rev.date} · {rev.roomBooked}
-                    </p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1 mb-1">
+                        {Array.from({ length: Math.max(1, Math.min(5, Math.round(Number(rev.rating) || 5))) }).map((_, i) => (
+                          <Star key={i} className="w-4 h-4 fill-[#E68A00] text-[#E68A00]" />
+                        ))}
+                      </div>
+
+                      <p className="text-sm font-semibold text-[#1A1F1D] dark:text-[#F5F5F0] truncate">
+                        {rev.guestName}
+                      </p>
+                      <p className="text-[11px] text-stone-400 dark:text-stone-500 mt-0.5">
+                        {formatRelativeTime(rev.createdAt, rev.date)} · {rev.roomBooked}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed italic mb-4">
+                    {rev.comment}
+                  </p>
+                </div>
+
+                <div className="pt-3 border-t border-stone-100 dark:border-[#1F332C] flex items-center justify-between">
+                  <span className="text-[11px] text-stone-400 dark:text-stone-500">
+                    Was this review helpful?
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleToggleHeart(rev.id)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                        rev.userReactedHeart
+                          ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 scale-105'
+                          : 'bg-stone-50 dark:bg-[#172A24] hover:bg-stone-100 dark:hover:bg-[#1F3830] text-stone-600 dark:text-stone-300'
+                      }`}
+                      title="Love this review"
+                    >
+                      <Heart
+                        className={`w-3.5 h-3.5 ${
+                          rev.userReactedHeart ? 'fill-red-500 text-red-500' : 'text-stone-400 dark:text-stone-500'
+                        }`}
+                      />
+                      <span className="tabular-nums">{rev.hearts}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleToggleLike(rev.id)}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+                        rev.userReactedLike
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#0D4739] dark:text-emerald-300 scale-105'
+                          : 'bg-stone-50 dark:bg-[#172A24] hover:bg-stone-100 dark:hover:bg-[#1F3830] text-stone-600 dark:text-stone-300'
+                      }`}
+                      title="Helpful review"
+                    >
+                      <ThumbsUp
+                        className={`w-3.5 h-3.5 ${
+                          rev.userReactedLike ? 'fill-[#0D4739] dark:fill-emerald-400 text-[#0D4739] dark:text-emerald-400' : 'text-stone-400 dark:text-stone-500'
+                        }`}
+                      />
+                      <span className="tabular-nums">{rev.likes}</span>
+                    </button>
                   </div>
                 </div>
-
-                <p className="text-sm text-stone-700 dark:text-stone-300 leading-relaxed italic mb-4">
-                  {rev.comment}
-                </p>
               </div>
-
-              <div className="pt-3 border-t border-stone-100 dark:border-[#1F332C] flex items-center justify-between">
-                <span className="text-[11px] text-stone-400 dark:text-stone-500">
-                  Was this review helpful?
-                </span>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleToggleHeart(rev.id)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                      rev.userReactedHeart
-                        ? 'bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 scale-105'
-                        : 'bg-stone-50 dark:bg-[#172A24] hover:bg-stone-100 dark:hover:bg-[#1F3830] text-stone-600 dark:text-stone-300'
-                    }`}
-                    title="Love this review"
-                  >
-                    <Heart
-                      className={`w-3.5 h-3.5 ${
-                        rev.userReactedHeart ? 'fill-red-500 text-red-500' : 'text-stone-400 dark:text-stone-500'
-                      }`}
-                    />
-                    <span className="tabular-nums">{rev.hearts}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleToggleLike(rev.id)}
-                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
-                      rev.userReactedLike
-                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-[#0D4739] dark:text-emerald-300 scale-105'
-                        : 'bg-stone-50 dark:bg-[#172A24] hover:bg-stone-100 dark:hover:bg-[#1F3830] text-stone-600 dark:text-stone-300'
-                    }`}
-                    title="Helpful review"
-                  >
-                    <ThumbsUp
-                      className={`w-3.5 h-3.5 ${
-                        rev.userReactedLike ? 'fill-[#0D4739] dark:fill-emerald-400 text-[#0D4739] dark:text-emerald-400' : 'text-stone-400 dark:text-stone-500'
-                      }`}
-                    />
-                    <span className="tabular-nums">{rev.likes}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </StaggerItem>
-          );
-        })}
-      </StaggerContainer>
-
-      {reviewsList.length > 3 && (
-        <div className="flex justify-center items-center gap-4 mt-8">
-          <button
-            onClick={handlePrev}
-            className="p-3 rounded-full bg-stone-100 dark:bg-[#172A24] hover:bg-stone-200 dark:hover:bg-[#1F3830] text-stone-700 dark:text-stone-300 transition-all cursor-pointer shadow-sm hover:shadow-md"
-            aria-label="Previous Reviews"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
-          <button
-            onClick={handleNext}
-            className="p-3 rounded-full bg-stone-100 dark:bg-[#172A24] hover:bg-stone-200 dark:hover:bg-[#1F3830] text-stone-700 dark:text-stone-300 transition-all cursor-pointer shadow-sm hover:shadow-md"
-            aria-label="Next Reviews"
-          >
-            <ChevronRight className="w-5 h-5" />
-          </button>
+            );
+          })}
         </div>
-      )}
+
+        {reviewsList.length > 3 && (
+          <div className="flex justify-center items-center gap-4 mt-8">
+            <button
+              onClick={handlePrev}
+              className="p-3 rounded-full bg-stone-100 dark:bg-[#172A24] hover:bg-stone-200 dark:hover:bg-[#1F3830] text-stone-700 dark:text-stone-300 transition-all cursor-pointer shadow-sm hover:shadow-md"
+              aria-label="Previous Reviews"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              onClick={handleNext}
+              className="p-3 rounded-full bg-stone-100 dark:bg-[#172A24] hover:bg-stone-200 dark:hover:bg-[#1F3830] text-stone-700 dark:text-stone-300 transition-all cursor-pointer shadow-sm hover:shadow-md"
+              aria-label="Next Reviews"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+          </div>
+        )}
+      </div>
     </section>
   );
 };
