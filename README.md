@@ -1,4 +1,4 @@
-# 🏨 Hotel Reservation System
+# 🏨 Hotel Room Reservation System
 
 A comprehensive, full-stack monolithic hotel room reservation system built with Spring Boot and React. This system is designed to streamline hotel operations, manage room inventories, handle guest reservations, and process billing efficiently.
 
