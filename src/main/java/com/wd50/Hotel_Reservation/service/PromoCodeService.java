@@ -3,6 +3,7 @@ package com.wd50.Hotel_Reservation.service;
 import com.wd50.Hotel_Reservation.model.PromoCode;
 import com.wd50.Hotel_Reservation.repository.PromoCodeRepository;
 import org.springframework.stereotype.Service;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +34,11 @@ public class PromoCodeService extends BaseService<PromoCode> {
         }
 
         PromoCode promo = promoOpt.get();
+        if (!promo.isValidAt(LocalDateTime.now())) {
+            result.put("valid", false);
+            result.put("message", "This promo code has expired or is not yet valid.");
+            return result;
+        }
         if (subtotal != null && promo.getMinSpend() != null && subtotal < promo.getMinSpend()) {
             result.put("valid", false);
             result.put("message", "Minimum spend of LKR " + promo.getMinSpend() + " required for this code.");
