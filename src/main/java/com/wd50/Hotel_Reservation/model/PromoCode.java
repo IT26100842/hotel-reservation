@@ -3,6 +3,8 @@ package com.wd50.Hotel_Reservation.model;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Table;
+import jakarta.persistence.PrePersist;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "promo_codes")
@@ -25,6 +27,42 @@ public class PromoCode extends BaseEntity {
     @Column(name = "is_active")
     private Boolean isActive = true;
 
+    // The current admin form omits dates. Preserve its open-ended behavior while
+    // satisfying the existing MySQL DATETIME NOT NULL columns.
+    @Column(name = "valid_from", nullable = false)
+    private LocalDateTime validFrom;
+
+    @Column(name = "valid_until", nullable = false)
+    private LocalDateTime validUntil;
+
+    @PrePersist
+    public void initializeValidity() {
+        if (validFrom == null) {
+            validFrom = LocalDateTime.now().withNano(0);
+        }
+        if (validUntil == null) {
+            validUntil = LocalDateTime.of(9999, 12, 31, 23, 59, 59);
+        }
+        validateValidity();
+    }
+
+    private void validateValidity() {
+        if (validFrom != null && validUntil != null && !validUntil.isAfter(validFrom)) {
+            throw new IllegalArgumentException("Promo end date must be after its start date.");
+        }
+    }
+
+    public boolean isValidAt(LocalDateTime time) {
+        return (validFrom == null || !time.isBefore(validFrom))
+                && (validUntil == null || !time.isAfter(validUntil));
+    }
+
+    public LocalDateTime getValidFrom() { return validFrom; }
+    public void setValidFrom(LocalDateTime validFrom) { this.validFrom = validFrom; }
+
+    public LocalDateTime getValidUntil() { return validUntil; }
+    public void setValidUntil(LocalDateTime validUntil) { this.validUntil = validUntil; }
+
     public PromoCode() {}
 
     public PromoCode(String code, String description, String discountType, Double discountValue, Double minSpend) {
@@ -38,6 +76,7 @@ public class PromoCode extends BaseEntity {
 
     @Override
     public void validate() {
+        initializeValidity();
         if (code == null || code.isBlank()) {
             throw new IllegalArgumentException("Promo code is required.");
         }
